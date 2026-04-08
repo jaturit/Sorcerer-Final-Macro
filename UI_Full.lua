@@ -35,6 +35,10 @@ local SaveDashboardCache = _G.SaveDashboardCache
 local GetDashboardText = _G.GetDashboardText
 local SaveStoryTowers = _G.SaveStoryTowers
 local LoadStoryTowers = _G.LoadStoryTowers
+local UserAuth = _G._UserAuth
+
+-- ShowLogin จะถูกประกาศใน LoginUI.lua ที่โหลดทีหลัง
+-- UI_Full เรียก ShowLogin() ผ่าน _G.ShowLogin แทน (deferred reference)
 
 -- Shared mutable state (sync with Hook via _G)
 local IsRecording = false
@@ -4016,7 +4020,7 @@ local function LoadMainUI()
     LogoutBtn.MouseButton1Click:Connect(function()
         UserAuth:Logout()
         ScreenGui:Destroy()
-        ShowLogin()
+        _G.ShowLogin()
     end)
 
     -- Drag Functionality
@@ -4108,7 +4112,7 @@ local function LoadMainUI()
             if not valid then
                 warn("⚠️ Key expired or invalid!")
                 ScreenGui:Destroy()
-                ShowLogin()
+                _G.ShowLogin()
                 break
             else
                 UpdateKeyStatus()
