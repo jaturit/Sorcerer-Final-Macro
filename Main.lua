@@ -6,7 +6,8 @@
 -- ⚙️ CONFIG: เปลี่ยน URL ตรงนี้ให้ตรงกับ GitHub repo ของคุณ
 -- ═══════════════════════════════════════════════════════
 
-local GITHUB_BASE = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/"
+local GITHUB_BASE = "https://raw.githubusercontent.com/jaturit/Sorcerer-Final-Macro/main/"
+
 -- ตัวอย่าง: "https://raw.githubusercontent.com/jaturit/Sorcerer-Final-Macro/main/"
 
 -- ═══════════════════════════════════════════════════════
