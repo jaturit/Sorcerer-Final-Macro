@@ -2920,133 +2920,126 @@ local function LoadMainUI()
                     task.wait(2)
 
                     -- บันทึก Colony จากตู้ที่เพิ่งเดินเข้า (Teleport UI ควรโชว์แล้ว)
+                    local thisElevColony = nil -- Colony ที่ได้จากตู้นี้เท่านั้น
                     pcall(function()
                         local cg = Player.PlayerGui:FindFirstChild("CullingGames")
                         if cg then
-                            local foundN = nil
                             local tp = cg:FindFirstChild("Teleport")
                             if tp and tp.Visible then
                                 local cn = tp:FindFirstChild("ColonyNum")
-                                if cn then foundN = tonumber(cn.Text:match("%d+")) end
+                                if cn then thisElevColony = tonumber(cn.Text:match("%d+")) end
                             end
-                            if not foundN then
+                            if not thisElevColony then
                                 for _, v in pairs(cg:GetDescendants()) do
                                     if v:IsA("TextLabel") and v.Text and v.Visible and v.Parent and v.Parent.Visible then
                                         local n = v.Text:lower():match("^colony[%s:]*(%d+)$")
-                                        if n then foundN = tonumber(n); break end
+                                        if n then thisElevColony = tonumber(n); break end
                                     end
                                 end
                             end
-                            if foundN then
-                                _G._CachedEventColony = foundN
-                                pcall(function() writefile(FOLDER .. "/event_colony.txt", tostring(foundN)) end)
-                                print("💾 [Event] Colony " .. foundN .. " (จากตู้ " .. elevNum .. ")")
+                            if thisElevColony then
+                                _G._CachedEventColony = thisElevColony
+                                pcall(function() writefile(FOLDER .. "/event_colony.txt", tostring(thisElevColony)) end)
+                                print("💾 [Event] Colony " .. thisElevColony .. " (จากตู้ " .. elevNum .. ")")
                             end
                         end
                     end)
 
                     -- [3.5] 🔧 Auto Equip/Unequip ก่อนเข้าด่าน (เฉพาะเมื่อเปิด)
-                    if _G.AutoEventEquip then
+                    -- ใช้ thisElevColony เท่านั้น (ไม่อ่าน cache/ไฟล์เก่า) ป้องกัน Colony ผิด
+                    if _G.AutoEventEquip and thisElevColony and thisElevColony > 0 then
                         pcall(function()
-                            -- อ่าน Colony ที่เพิ่งบันทึก
-                            local colony = _G._CachedEventColony or 0
-                            if colony == 0 then
-                                pcall(function()
-                                    if isfile(FOLDER .. "/event_colony.txt") then
-                                        colony = tonumber(readfile(FOLDER .. "/event_colony.txt")) or 0
-                                    end
-                                end)
-                            end
+                            local colony = thisElevColony
+                            local macroName = _G.EventColonyMacros and _G.EventColonyMacros[tostring(colony)]
+                            if macroName and macroName ~= "" then
+                                local EventMacroFolder = FOLDER .. "/event"
+                                local macroPath = EventMacroFolder .. "/" .. macroName .. ".json"
+                                if isfile(macroPath) then
+                                    eventStatus.Text = "🔧 Equip tower สำหรับ Colony " .. colony .. "..."
+                                    eventStatus.TextColor3 = Colors.Yellow
+                                    print("🔧 [Event] Auto Equip สำหรับ Colony " .. colony .. " → " .. macroName)
 
-                            if colony > 0 then
-                                local macroName = _G.EventColonyMacros and _G.EventColonyMacros[tostring(colony)]
-                                if macroName and macroName ~= "" then
-                                    local EventMacroFolder = FOLDER .. "/event"
-                                    local macroPath = EventMacroFolder .. "/" .. macroName .. ".json"
-                                    if isfile(macroPath) then
-                                        eventStatus.Text = "🔧 Equip tower สำหรับ Colony " .. colony .. "..."
-                                        eventStatus.TextColor3 = Colors.Yellow
-                                        print("🔧 [Event] Auto Equip สำหรับ Colony " .. colony .. " → " .. macroName)
+                                    local RS = game:GetService("ReplicatedStorage")
+                                    local equipRemote = RS.Remotes.Towers.EquipTower
+                                    local unequipRemote = RS.Remotes.Towers.UnequipTower
 
-                                        local RS = game:GetService("ReplicatedStorage")
-                                        local equipRemote = RS.Remotes.Towers.EquipTower
-                                        local unequipRemote = RS.Remotes.Towers.UnequipTower
-
-                                        -- อ่าน UUID จาก macro ที่จะใช้
-                                        local macroUUIDs = {}
-                                        local macroData = HttpService:JSONDecode(readfile(macroPath))
-                                        local actions = macroData
-                                        if type(macroData) == "table" and macroData.Actions then actions = macroData.Actions end
-                                        if type(actions) == "table" then
-                                            for _, act in ipairs(actions) do
-                                                if act.Type == "Spawn" then
-                                                    local uuid = act.TowerName or (act.Args and act.Args[1])
-                                                    if uuid then table.insert(macroUUIDs, uuid) end
-                                                end
+                                    -- อ่าน UUID จาก macro ที่จะใช้
+                                    local macroUUIDs = {}
+                                    local macroData = HttpService:JSONDecode(readfile(macroPath))
+                                    local actions = macroData
+                                    if type(macroData) == "table" and macroData.Actions then actions = macroData.Actions end
+                                    if type(actions) == "table" then
+                                        for _, act in ipairs(actions) do
+                                            if act.Type == "Spawn" then
+                                                local uuid = act.TowerName or (act.Args and act.Args[1])
+                                                if uuid then table.insert(macroUUIDs, uuid) end
                                             end
                                         end
+                                    end
 
-                                        local uniqueUUIDs = {}
-                                        local seenUUID = {}
-                                        for _, uuid in ipairs(macroUUIDs) do
-                                            if not seenUUID[uuid] then seenUUID[uuid] = true; table.insert(uniqueUUIDs, uuid) end
-                                        end
+                                    local uniqueUUIDs = {}
+                                    local seenUUID = {}
+                                    for _, uuid in ipairs(macroUUIDs) do
+                                        if not seenUUID[uuid] then seenUUID[uuid] = true; table.insert(uniqueUUIDs, uuid) end
+                                    end
 
-                                        -- Step 1: รวม UUID จาก macro ทุก Colony → ยิง Unequip ทั้งหมดก่อน
-                                        local allUUIDs = {}
-                                        local seenAll = {}
-                                        pcall(function()
-                                            for colKey, colMacro in pairs(_G.EventColonyMacros or {}) do
-                                                if colMacro and colMacro ~= "" then
-                                                    local colPath = EventMacroFolder .. "/" .. colMacro .. ".json"
-                                                    if isfile(colPath) then
-                                                        local colData = HttpService:JSONDecode(readfile(colPath))
-                                                        local colActions = colData
-                                                        if type(colData) == "table" and colData.Actions then colActions = colData.Actions end
-                                                        if type(colActions) == "table" then
-                                                            for _, act in ipairs(colActions) do
-                                                                if act.Type == "Spawn" then
-                                                                    local uuid = act.TowerName or (act.Args and act.Args[1])
-                                                                    if uuid and not seenAll[uuid] then
-                                                                        seenAll[uuid] = true
-                                                                        table.insert(allUUIDs, uuid)
-                                                                    end
+                                    -- Step 1: รวม UUID จาก macro ทุก Colony → ยิง Unequip ทั้งหมดก่อน
+                                    local allUUIDs = {}
+                                    local seenAll = {}
+                                    pcall(function()
+                                        for colKey, colMacro in pairs(_G.EventColonyMacros or {}) do
+                                            if colMacro and colMacro ~= "" then
+                                                local colPath = EventMacroFolder .. "/" .. colMacro .. ".json"
+                                                if isfile(colPath) then
+                                                    local colData = HttpService:JSONDecode(readfile(colPath))
+                                                    local colActions = colData
+                                                    if type(colData) == "table" and colData.Actions then colActions = colData.Actions end
+                                                    if type(colActions) == "table" then
+                                                        for _, act in ipairs(colActions) do
+                                                            if act.Type == "Spawn" then
+                                                                local uuid = act.TowerName or (act.Args and act.Args[1])
+                                                                if uuid and not seenAll[uuid] then
+                                                                    seenAll[uuid] = true
+                                                                    table.insert(allUUIDs, uuid)
                                                                 end
                                                             end
                                                         end
                                                     end
                                                 end
                                             end
-                                        end)
-
-                                        -- ยิง Unequip ทุก UUID (ตัวที่ไม่ได้อยู่ใน deck เกมจะ ignore เอง)
-                                        local unequipCount = 0
-                                        for _, uuid in ipairs(allUUIDs) do
-                                            pcall(function() unequipRemote:FireServer(uuid) end)
-                                            unequipCount = unequipCount + 1
-                                            print("🔧 [Event] Unequip: " .. uuid:sub(1,12) .. "...")
-                                            task.wait(0.15)
                                         end
+                                    end)
 
-                                        task.wait(0.5)
-
-                                        -- Step 2: Equip UUID จาก macro ที่จะใช้
-                                        local equipCount = 0
-                                        for _, uuid in ipairs(uniqueUUIDs) do
-                                            pcall(function() equipRemote:FireServer(uuid) end)
-                                            equipCount = equipCount + 1
-                                            print("✅ [Event] Equip: " .. uuid:sub(1,12) .. "...")
-                                            task.wait(0.3)
-                                        end
-
-                                        eventStatus.Text = "🔧 Equip เสร็จ! (" .. equipCount .. " ตัว, ถอด " .. unequipCount .. " ตัว)"
-                                        eventStatus.TextColor3 = Colors.Green
-                                        print("🔧 [Event] Auto Equip เสร็จ! Equip: " .. equipCount .. " | Unequip: " .. unequipCount)
-                                        task.wait(0.5)
+                                    -- ยิง Unequip ทุก UUID
+                                    local unequipCount = 0
+                                    for _, uuid in ipairs(allUUIDs) do
+                                        pcall(function() unequipRemote:FireServer(uuid) end)
+                                        unequipCount = unequipCount + 1
+                                        print("🔧 [Event] Unequip: " .. uuid:sub(1,12) .. "...")
+                                        task.wait(0.15)
                                     end
+
+                                    -- รอให้ server ประมวลผล Unequip ทั้งหมดก่อน
+                                    task.wait(1)
+
+                                    -- Step 2: Equip UUID จาก macro ที่จะใช้
+                                    local equipCount = 0
+                                    for _, uuid in ipairs(uniqueUUIDs) do
+                                        pcall(function() equipRemote:FireServer(uuid) end)
+                                        equipCount = equipCount + 1
+                                        print("✅ [Event] Equip: " .. uuid:sub(1,12) .. "...")
+                                        task.wait(0.3)
+                                    end
+
+                                    eventStatus.Text = "🔧 Equip เสร็จ! (" .. equipCount .. " ตัว, ถอด " .. unequipCount .. " ตัว)"
+                                    eventStatus.TextColor3 = Colors.Green
+                                    print("🔧 [Event] Auto Equip เสร็จ! Equip: " .. equipCount .. " | Unequip: " .. unequipCount)
+                                    task.wait(0.5)
                                 end
                             end
                         end)
+                    elseif _G.AutoEventEquip and (not thisElevColony or thisElevColony == 0) then
+                        print("⚠️ [Event] ตู้ " .. elevNum .. " ไม่เจอ Colony UI → ข้าม Auto Equip")
                     end
 
                     eventStatus.Text = "🚀 ยิง Remote ตู้ " .. elevNum .. "..."
