@@ -2972,7 +2972,7 @@ local function LoadMainUI()
                                         local equipRemote = RS.Remotes.Towers.EquipTower
                                         local unequipRemote = RS.Remotes.Towers.UnequipTower
 
-                                        -- อ่าน UUID จาก macro file
+                                        -- อ่าน UUID จาก macro ที่จะใช้
                                         local macroUUIDs = {}
                                         local macroData = HttpService:JSONDecode(readfile(macroPath))
                                         local actions = macroData
@@ -2986,40 +2986,51 @@ local function LoadMainUI()
                                             end
                                         end
 
-                                        -- หา UUID ที่ไม่ซ้ำ
                                         local uniqueUUIDs = {}
                                         local seenUUID = {}
                                         for _, uuid in ipairs(macroUUIDs) do
                                             if not seenUUID[uuid] then seenUUID[uuid] = true; table.insert(uniqueUUIDs, uuid) end
                                         end
 
-                                        -- Step 1: Scan deck ปัจจุบัน → Unequip ตัวที่ไม่อยู่ใน macro
-                                        local currentDeck = {}
+                                        -- Step 1: รวม UUID จาก macro ทุก Colony → ยิง Unequip ทั้งหมดก่อน
+                                        local allUUIDs = {}
+                                        local seenAll = {}
                                         pcall(function()
-                                            local gui = Player.PlayerGui:FindFirstChild("GameGui")
-                                            if gui then
-                                                local towersFrame = gui:FindFirstChild("Towers")
-                                                if towersFrame then
-                                                    for _, slot in pairs(towersFrame:GetChildren()) do
-                                                        if #slot.Name > 20 and slot.Name:find("-") then
-                                                            table.insert(currentDeck, slot.Name)
+                                            for colKey, colMacro in pairs(_G.EventColonyMacros or {}) do
+                                                if colMacro and colMacro ~= "" then
+                                                    local colPath = EventMacroFolder .. "/" .. colMacro .. ".json"
+                                                    if isfile(colPath) then
+                                                        local colData = HttpService:JSONDecode(readfile(colPath))
+                                                        local colActions = colData
+                                                        if type(colData) == "table" and colData.Actions then colActions = colData.Actions end
+                                                        if type(colActions) == "table" then
+                                                            for _, act in ipairs(colActions) do
+                                                                if act.Type == "Spawn" then
+                                                                    local uuid = act.TowerName or (act.Args and act.Args[1])
+                                                                    if uuid and not seenAll[uuid] then
+                                                                        seenAll[uuid] = true
+                                                                        table.insert(allUUIDs, uuid)
+                                                                    end
+                                                                end
+                                                            end
                                                         end
                                                     end
                                                 end
                                             end
                                         end)
 
+                                        -- ยิง Unequip ทุก UUID (ตัวที่ไม่ได้อยู่ใน deck เกมจะ ignore เอง)
                                         local unequipCount = 0
-                                        for _, deckUUID in ipairs(currentDeck) do
-                                            if not seenUUID[deckUUID] then
-                                                pcall(function() unequipRemote:FireServer(deckUUID) end)
-                                                unequipCount = unequipCount + 1
-                                                print("🔧 [Event] Unequip: " .. deckUUID:sub(1,12) .. "...")
-                                                task.wait(0.3)
-                                            end
+                                        for _, uuid in ipairs(allUUIDs) do
+                                            pcall(function() unequipRemote:FireServer(uuid) end)
+                                            unequipCount = unequipCount + 1
+                                            print("🔧 [Event] Unequip: " .. uuid:sub(1,12) .. "...")
+                                            task.wait(0.15)
                                         end
 
-                                        -- Step 2: Equip UUID จาก macro
+                                        task.wait(0.5)
+
+                                        -- Step 2: Equip UUID จาก macro ที่จะใช้
                                         local equipCount = 0
                                         for _, uuid in ipairs(uniqueUUIDs) do
                                             pcall(function() equipRemote:FireServer(uuid) end)
