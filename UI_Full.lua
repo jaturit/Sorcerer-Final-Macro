@@ -2414,6 +2414,12 @@ local function LoadMainUI()
         SaveConfig()
     end)
 
+    _G.AutoEventEquip = _G.AutoEventEquip or false
+    createToggle(EventCtrlBox, "🔧 Auto Equip Event", _G.AutoEventEquip, function(v)
+        _G.AutoEventEquip = v
+        SaveConfig()
+    end)
+
     -- Card choice (-1=Smart, 0=Skip, 1/2/3=การ์ด)
     local CardOptions = {[-1] = "🧠 Smart (เลี่ยงบัพ)", [0] = "ไม่เลือกการ์ด", [1] = "การ์ดใบ 1", [2] = "การ์ดใบ 2", [3] = "การ์ดใบ 3"}
     local CardOrder = {-1, 0, 1, 2, 3}
@@ -2938,6 +2944,99 @@ local function LoadMainUI()
                             end
                         end
                     end)
+
+                    -- [3.5] 🔧 Auto Equip/Unequip ก่อนเข้าด่าน (เฉพาะเมื่อเปิด)
+                    if _G.AutoEventEquip then
+                        pcall(function()
+                            -- อ่าน Colony ที่เพิ่งบันทึก
+                            local colony = _G._CachedEventColony or 0
+                            if colony == 0 then
+                                pcall(function()
+                                    if isfile(FOLDER .. "/event_colony.txt") then
+                                        colony = tonumber(readfile(FOLDER .. "/event_colony.txt")) or 0
+                                    end
+                                end)
+                            end
+
+                            if colony > 0 then
+                                local macroName = _G.EventColonyMacros and _G.EventColonyMacros[tostring(colony)]
+                                if macroName and macroName ~= "" then
+                                    local EventMacroFolder = FOLDER .. "/event"
+                                    local macroPath = EventMacroFolder .. "/" .. macroName .. ".json"
+                                    if isfile(macroPath) then
+                                        eventStatus.Text = "🔧 Equip tower สำหรับ Colony " .. colony .. "..."
+                                        eventStatus.TextColor3 = Colors.Yellow
+                                        print("🔧 [Event] Auto Equip สำหรับ Colony " .. colony .. " → " .. macroName)
+
+                                        local RS = game:GetService("ReplicatedStorage")
+                                        local equipRemote = RS.Remotes.Towers.EquipTower
+                                        local unequipRemote = RS.Remotes.Towers.UnequipTower
+
+                                        -- อ่าน UUID จาก macro file
+                                        local macroUUIDs = {}
+                                        local macroData = HttpService:JSONDecode(readfile(macroPath))
+                                        local actions = macroData
+                                        if type(macroData) == "table" and macroData.Actions then actions = macroData.Actions end
+                                        if type(actions) == "table" then
+                                            for _, act in ipairs(actions) do
+                                                if act.Type == "Spawn" then
+                                                    local uuid = act.TowerName or (act.Args and act.Args[1])
+                                                    if uuid then table.insert(macroUUIDs, uuid) end
+                                                end
+                                            end
+                                        end
+
+                                        -- หา UUID ที่ไม่ซ้ำ
+                                        local uniqueUUIDs = {}
+                                        local seenUUID = {}
+                                        for _, uuid in ipairs(macroUUIDs) do
+                                            if not seenUUID[uuid] then seenUUID[uuid] = true; table.insert(uniqueUUIDs, uuid) end
+                                        end
+
+                                        -- Step 1: Scan deck ปัจจุบัน → Unequip ตัวที่ไม่อยู่ใน macro
+                                        local currentDeck = {}
+                                        pcall(function()
+                                            local gui = Player.PlayerGui:FindFirstChild("GameGui")
+                                            if gui then
+                                                local towersFrame = gui:FindFirstChild("Towers")
+                                                if towersFrame then
+                                                    for _, slot in pairs(towersFrame:GetChildren()) do
+                                                        if #slot.Name > 20 and slot.Name:find("-") then
+                                                            table.insert(currentDeck, slot.Name)
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end)
+
+                                        local unequipCount = 0
+                                        for _, deckUUID in ipairs(currentDeck) do
+                                            if not seenUUID[deckUUID] then
+                                                pcall(function() unequipRemote:FireServer(deckUUID) end)
+                                                unequipCount = unequipCount + 1
+                                                print("🔧 [Event] Unequip: " .. deckUUID:sub(1,12) .. "...")
+                                                task.wait(0.3)
+                                            end
+                                        end
+
+                                        -- Step 2: Equip UUID จาก macro
+                                        local equipCount = 0
+                                        for _, uuid in ipairs(uniqueUUIDs) do
+                                            pcall(function() equipRemote:FireServer(uuid) end)
+                                            equipCount = equipCount + 1
+                                            print("✅ [Event] Equip: " .. uuid:sub(1,12) .. "...")
+                                            task.wait(0.3)
+                                        end
+
+                                        eventStatus.Text = "🔧 Equip เสร็จ! (" .. equipCount .. " ตัว, ถอด " .. unequipCount .. " ตัว)"
+                                        eventStatus.TextColor3 = Colors.Green
+                                        print("🔧 [Event] Auto Equip เสร็จ! Equip: " .. equipCount .. " | Unequip: " .. unequipCount)
+                                        task.wait(0.5)
+                                    end
+                                end
+                            end
+                        end)
+                    end
 
                     eventStatus.Text = "🚀 ยิง Remote ตู้ " .. elevNum .. "..."
                     local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")

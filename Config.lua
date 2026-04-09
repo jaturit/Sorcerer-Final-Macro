@@ -223,6 +223,7 @@ local function SaveConfig()
             FastSkip = _G.FastSkip,
             AutoEvent = _G.AutoEvent,
             AutoEventMacro = _G.AutoEventMacro,
+            AutoEventEquip = _G.AutoEventEquip,
             EventCardChoice = _G.EventCardChoice,
             EventSelectedFile = _G.EventSelectedFile,
             EventColonyMacros = _G.EventColonyMacros,
@@ -263,6 +264,7 @@ local function LoadConfig()
             _G.FastSkip = data.FastSkip or false
             _G.AutoEvent = data.AutoEvent or false
             _G.AutoEventMacro = data.AutoEventMacro or false
+            _G.AutoEventEquip = data.AutoEventEquip or false
             _G.EventCardChoice = data.EventCardChoice or 0
             _G.EventSelectedFile = data.EventSelectedFile or "None"
             _G.EventColonyMacros = data.EventColonyMacros or {}
