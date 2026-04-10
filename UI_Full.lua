@@ -2983,15 +2983,25 @@ local function LoadMainUI()
                                         if not seenUUID[uuid] then seenUUID[uuid] = true; table.insert(uniqueUUIDs, uuid) end
                                     end
 
-                                    -- Debug: แสดง UUID ที่จะ Equip
-                                    print("📋 [Event] Macro '" .. macroName .. "' มี " .. #uniqueUUIDs .. " tower ไม่ซ้ำ:")
+                                    print("📋 [Event] Macro '" .. macroName .. "' ต้องการ " .. #uniqueUUIDs .. " tower:")
                                     for idx, uuid in ipairs(uniqueUUIDs) do
                                         print("   " .. idx .. ". " .. uuid)
                                     end
 
-                                    -- Step 1: รวม UUID จาก macro ทุก Colony → ยิง Unequip ทั้งหมดก่อน
-                                    local allUUIDs = {}
-                                    local seenAll = {}
+                                    -- Step 1: Equip ตัวที่ต้องการก่อน (เกมจะสลับตัวเก่าออกเอง)
+                                    print("✅ [Event] Step 1: Equip " .. #uniqueUUIDs .. " ตัวที่ต้องการ")
+                                    local equipCount = 0
+                                    for _, uuid in ipairs(uniqueUUIDs) do
+                                        print("✅ [Event] Equip: " .. uuid)
+                                        pcall(function() equipRemote:FireServer(uuid) end)
+                                        equipCount = equipCount + 1
+                                        task.wait(1)
+                                    end
+
+                                    task.wait(1)
+
+                                    -- Step 2: Unequip ตัวที่ไม่อยู่ใน macro (เฉพาะ UUID จาก Colony อื่นที่ไม่ต้องการ)
+                                    local allOtherUUIDs = {}
                                     pcall(function()
                                         for colKey, colMacro in pairs(_G.EventColonyMacros or {}) do
                                             if colMacro and colMacro ~= "" then
@@ -3004,9 +3014,9 @@ local function LoadMainUI()
                                                         for _, act in ipairs(colActions) do
                                                             if act.Type == "Spawn" then
                                                                 local uuid = act.TowerName or (act.Args and act.Args[1])
-                                                                if uuid and not seenAll[uuid] then
-                                                                    seenAll[uuid] = true
-                                                                    table.insert(allUUIDs, uuid)
+                                                                -- เฉพาะ UUID ที่ไม่อยู่ใน macro ที่จะใช้
+                                                                if uuid and not seenUUID[uuid] then
+                                                                    allOtherUUIDs[uuid] = true
                                                                 end
                                                             end
                                                         end
@@ -3016,26 +3026,11 @@ local function LoadMainUI()
                                         end
                                     end)
 
-                                    print("🔧 [Event] Unequip ทั้งหมด " .. #allUUIDs .. " UUID จากทุก Colony")
-
-                                    -- ยิง Unequip ทุก UUID
                                     local unequipCount = 0
-                                    for _, uuid in ipairs(allUUIDs) do
+                                    for uuid, _ in pairs(allOtherUUIDs) do
+                                        print("🔧 [Event] Unequip: " .. uuid)
                                         pcall(function() unequipRemote:FireServer(uuid) end)
                                         unequipCount = unequipCount + 1
-                                        task.wait(1)
-                                    end
-
-                                    -- รอให้ server ประมวลผล Unequip ทั้งหมดก่อน
-                                    print("⏳ [Event] รอ server ประมวลผล Unequip...")
-                                    task.wait(2)
-
-                                    -- Step 2: Equip UUID จาก macro ที่จะใช้ (ยิงทีละตัว + verify)
-                                    local equipCount = 0
-                                    for _, uuid in ipairs(uniqueUUIDs) do
-                                        print("✅ [Event] Equip: " .. uuid)
-                                        pcall(function() equipRemote:FireServer(uuid) end)
-                                        equipCount = equipCount + 1
                                         task.wait(1)
                                     end
 
