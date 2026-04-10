@@ -2982,7 +2982,7 @@ local function LoadMainUI()
 
                                     print("📋 [Event] Macro ต้องการ " .. #uniqueUUIDs .. " tower")
 
-                                    -- Step 1: อ่าน deck ปัจจุบันจาก Inventory GUI → Unequip ตัวที่ไม่อยู่ใน macro
+                                    -- Step 1: อ่าน deck จาก Inventory GUI → Unequip ทุกตัว
                                     local currentDeck = {}
                                     pcall(function()
                                         local invGui = Player.PlayerGui:FindFirstChild("Inventory")
@@ -3002,15 +3002,13 @@ local function LoadMainUI()
 
                                     local unequipCount = 0
                                     for _, deckUUID in ipairs(currentDeck) do
-                                        if not seenUUID[deckUUID] then
-                                            pcall(function() unequipRemote:FireServer(deckUUID) end)
-                                            unequipCount = unequipCount + 1
-                                            print("🔧 [Event] Unequip: " .. deckUUID)
-                                            task.wait(0.3)
-                                        end
+                                        pcall(function() unequipRemote:FireServer(deckUUID) end)
+                                        unequipCount = unequipCount + 1
+                                        print("🔧 [Event] Unequip: " .. deckUUID)
+                                        task.wait(0.3)
                                     end
 
-                                    if unequipCount > 0 then task.wait(0.5) end
+                                    if unequipCount > 0 then task.wait(1) end
 
                                     -- Step 2: Equip ตัวที่ต้องการ
                                     local equipCount = 0
