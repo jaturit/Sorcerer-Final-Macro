@@ -1972,78 +1972,94 @@ local function LoadMainUI()
             orbBuyCount = 0
             task.spawn(function()
                 while _AutoBuyOrb do
+                    -- ซื้อ 10 ลูกรวด
                     pcall(function()
-                        ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CullingGames"):WaitForChild("BuyOrb"):FireServer(1)
+                        ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CullingGames"):WaitForChild("BuyOrb"):FireServer(10)
                     end)
-                    orbBuyCount = orbBuyCount + 1
-                    orbCountLbl.Text = "📊 ซื้อแล้ว: " .. orbBuyCount .. " ครั้ง"
-                    orbStatus.Text = "🔄 #" .. orbBuyCount .. " รอหน้าเลือก..."
+                    orbBuyCount = orbBuyCount + 10
+                    orbCountLbl.Text = "📊 ซื้อแล้ว: " .. orbBuyCount .. " ลูก"
+                    orbStatus.Text = "🔄 ซื้อ 10 ลูก รอเลือกรางวัล..."
+                    print("🔮 ซื้อ Orb x10 (รวม " .. orbBuyCount .. " ลูก)")
 
-                    -- รอหน้าเลือกรางวัล (PlayerGui.Orbs.OrbsFrame)
-                    local orbsFrame = nil
-                    for waitI = 1, 50 do
+                    -- รอกดเลือกรางวัล 10 รอบ
+                    local pickCount = 0
+                    for round = 1, 10 do
                         if not _AutoBuyOrb then break end
-                        pcall(function()
-                            local orbsUI = Player.PlayerGui:FindFirstChild("Orbs")
-                            if orbsUI then
-                                local of = orbsUI:FindFirstChild("OrbsFrame")
-                                if of and of.Visible then orbsFrame = of end
-                            end
-                        end)
-                        if orbsFrame then break end
-                        task.wait(0.15)
-                    end
-                    if not _AutoBuyOrb then break end
 
-                    if orbsFrame then
-                        task.wait(0.5) -- รออนิเมชั่นสั้นๆ
-
-                        local selected = false
-                        for _, wantedItem in ipairs(OrbPriority) do
-                            if selected then break end
-                            for ci = 1, 3 do
-                                pcall(function()
-                                    local card = orbsFrame:FindFirstChild(tostring(ci))
-                                    if card and card:FindFirstChild("Btn") then
-                                        local title = card.Btn:FindFirstChild("Title")
-                                        if title and title.Text == wantedItem then
-                                            forceClickBtn(card.Btn)
-                                            orbStatus.Text = "✅ #" .. orbBuyCount .. " → " .. wantedItem
-                                            orbStatus.TextColor3 = Colors.Green
-                                            print("🔮 Orb #" .. orbBuyCount .. " → " .. wantedItem)
-                                            selected = true
-                                        end
-                                    end
-                                end)
-                            end
-                        end
-                        if not selected then
-                            pcall(function()
-                                local c1 = orbsFrame:FindFirstChild("1")
-                                if c1 and c1:FindFirstChild("Btn") then forceClickBtn(c1.Btn) end
-                            end)
-                            orbStatus.Text = "⚠️ #" .. orbBuyCount .. " กดใบ 1"
-                        end
-
-                        -- รอหน้าเลือกหายไปก่อนซื้อรอบถัดไป
-                        for closeWait = 1, 30 do
+                        -- รอหน้าเลือกรางวัลเด้งขึ้นมา
+                        local orbsFrame = nil
+                        for waitI = 1, 50 do
                             if not _AutoBuyOrb then break end
-                            local stillOpen = false
                             pcall(function()
                                 local orbsUI = Player.PlayerGui:FindFirstChild("Orbs")
                                 if orbsUI then
                                     local of = orbsUI:FindFirstChild("OrbsFrame")
-                                    if of and of.Visible then stillOpen = true end
+                                    if of and of.Visible then orbsFrame = of end
                                 end
                             end)
-                            if not stillOpen then break end
+                            if orbsFrame then break end
                             task.wait(0.15)
                         end
-                        task.wait(0.3) -- buffer สั้นก่อนซื้อรอบถัดไป
-                    else
-                        orbStatus.Text = "⚠️ หน้าเลือกไม่ขึ้น..."
-                        task.wait(1)
+                        if not _AutoBuyOrb then break end
+
+                        if orbsFrame then
+                            task.wait(0.5) -- รออนิเมชั่น
+
+                            -- เลือกรางวัลตาม priority
+                            local selected = false
+                            for _, wantedItem in ipairs(OrbPriority) do
+                                if selected then break end
+                                for ci = 1, 3 do
+                                    pcall(function()
+                                        local card = orbsFrame:FindFirstChild(tostring(ci))
+                                        if card and card:FindFirstChild("Btn") then
+                                            local title = card.Btn:FindFirstChild("Title")
+                                            if title and title.Text == wantedItem then
+                                                forceClickBtn(card.Btn)
+                                                orbStatus.Text = "✅ รอบ " .. round .. "/10 → " .. wantedItem
+                                                orbStatus.TextColor3 = Colors.Green
+                                                print("🔮 รอบ " .. round .. "/10 → " .. wantedItem)
+                                                selected = true
+                                            end
+                                        end
+                                    end)
+                                end
+                            end
+                            if not selected then
+                                pcall(function()
+                                    local c1 = orbsFrame:FindFirstChild("1")
+                                    if c1 and c1:FindFirstChild("Btn") then forceClickBtn(c1.Btn) end
+                                end)
+                                orbStatus.Text = "⚠️ รอบ " .. round .. "/10 กดใบ 1"
+                            end
+                            pickCount = pickCount + 1
+
+                            -- รอหน้าเลือกหายไปก่อนรอบถัดไป
+                            for closeWait = 1, 30 do
+                                if not _AutoBuyOrb then break end
+                                local stillOpen = false
+                                pcall(function()
+                                    local orbsUI = Player.PlayerGui:FindFirstChild("Orbs")
+                                    if orbsUI then
+                                        local of = orbsUI:FindFirstChild("OrbsFrame")
+                                        if of and of.Visible then stillOpen = true end
+                                    end
+                                end)
+                                if not stillOpen then break end
+                                task.wait(0.15)
+                            end
+                            task.wait(0.3)
+                        else
+                            -- หน้าเลือกไม่ขึ้น = หมดรางวัลแล้ว
+                            orbStatus.Text = "📦 เลือกครบ " .. pickCount .. "/10 รอบ"
+                            print("🔮 หน้าเลือกไม่ขึ้นรอบ " .. round .. " → หมดแล้ว")
+                            break
+                        end
                     end
+
+                    if not _AutoBuyOrb then break end
+                    orbStatus.Text = "🔄 เลือกครบ → ซื้ออีก 10 ลูก..."
+                    task.wait(1)
                 end
                 orbToggle.Text = "▶️ เริ่ม Auto Buy Orb"
                 orbToggle.BackgroundColor3 = Colors.NeonRed
