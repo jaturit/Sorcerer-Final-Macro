@@ -197,13 +197,13 @@ task.spawn(function()
                     end
                 end
             end)
-            -- วิธี 2: เช็คปุ่ม replay/lobby จาก EndScreen children (ไม่ scan ทั้ง PlayerGui)
+            -- วิธี 2: เช็คปุ่ม replay/lobby จาก EndScreen children (เฉพาะเมื่อ EndScreen Visible)
             if not isGameEndVisible then
                 pcall(function()
                     local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
                     if gameGui then
                         local endScreen = gameGui:FindFirstChild("EndScreen")
-                        if endScreen then
+                        if endScreen and endScreen.Visible then
                             for _, v in pairs(endScreen:GetChildren()) do
                                 if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
                                     local name = v.Name:lower()
@@ -268,7 +268,7 @@ task.spawn(function()
                         if endScreen and endScreen.Visible then
                             isGameOver = true
                         end
-                        if not isGameOver then
+                        if not isGameOver and endScreen and endScreen.Visible then
                             for _, v in pairs(endScreen and endScreen:GetChildren() or {}) do
                                 if v:IsA("TextButton") and v.Visible then
                                     local text = v.Text:lower()
