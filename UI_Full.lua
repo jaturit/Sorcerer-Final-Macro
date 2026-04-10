@@ -196,11 +196,16 @@ local function LoadMainUI()
 
     task.spawn(function()
         while MainStroke and MainStroke.Parent do
-            TweenService:Create(MainStroke, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0}):Play()
-            task.wait(0.6)
-            if not MainStroke or not MainStroke.Parent then break end
-            TweenService:Create(MainStroke, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.3}):Play()
-            task.wait(0.6)
+            for i = 0.3, 0, -0.05 do
+                if not MainStroke or not MainStroke.Parent then break end
+                MainStroke.Transparency = i
+                task.wait(0.05)
+            end
+            for i = 0, 0.3, 0.05 do
+                if not MainStroke or not MainStroke.Parent then break end
+                MainStroke.Transparency = i
+                task.wait(0.05)
+            end
         end
     end)
 
@@ -2334,23 +2339,32 @@ local function LoadMainUI()
             pcall(function()
                 local cg = Player.PlayerGui:FindFirstChild("CullingGames")
                 if cg then
+                    for _, v in pairs(cg:GetDescendants()) do
+                        if v:IsA("TextLabel") and v.Text and v.Visible then
+                            local pts = v.Text:match("Culling Points:%s*(%d+)")
+                            if not pts then pts = v.Text:match("^(%d+)$") end
+                            if pts and v.Parent and v.Parent.Name == "Teleport" then
+                                eventPointsLbl.Text = "🏆 Culling Points: " .. pts
+                                pcall(function() writefile(cpFile, pts) end)
+                                break
+                            end
+                        end
+                    end
+                    -- fallback: หาจาก CullingPoints label โดยเฉพาะ
                     local tp = cg:FindFirstChild("Teleport")
-                    if tp and tp.Visible then
-                        -- หาจาก Teleport children โดยตรง
-                        for _, v in pairs(tp:GetChildren()) do
-                            if v:IsA("TextLabel") and v.Text and v.Visible then
-                                local pts = v.Text:match("Culling Points:%s*(%d+)") or v.Text:match("^(%d+)$")
-                                if pts then
-                                    eventPointsLbl.Text = "🏆 Culling Points: " .. pts
-                                    pcall(function() writefile(cpFile, pts) end)
-                                    break
-                                end
+                    if tp then
+                        local cpLbl = tp:FindFirstChild("CullingPoints") or tp:FindFirstChild("Points")
+                        if cpLbl and cpLbl:IsA("TextLabel") then
+                            local pts = cpLbl.Text:match("%d+")
+                            if pts then
+                                eventPointsLbl.Text = "🏆 Culling Points: " .. pts
+                                pcall(function() writefile(cpFile, pts) end)
                             end
                         end
                     end
                 end
             end)
-            task.wait(5)
+            task.wait(2)
         end
     end)
 
@@ -2397,6 +2411,12 @@ local function LoadMainUI()
     _G.AutoEventMacro = _G.AutoEventMacro or false
     createToggle(EventCtrlBox, "▶️ Auto Play Event Macro", _G.AutoEventMacro, function(v)
         _G.AutoEventMacro = v
+        SaveConfig()
+    end)
+
+    _G.AutoEventEquip = _G.AutoEventEquip or false
+    createToggle(EventCtrlBox, "🔧 Auto Equip Event", _G.AutoEventEquip, function(v)
+        _G.AutoEventEquip = v
         SaveConfig()
     end)
 
@@ -2924,6 +2944,88 @@ local function LoadMainUI()
                             end
                         end
                     end)
+
+                    -- [3.5] 🔧 Auto Equip/Unequip ก่อนเข้าด่าน (เฉพาะเมื่อเปิด)
+                    local thisElevColony = _G._CachedEventColony
+                    if _G.AutoEventEquip and thisElevColony and thisElevColony > 0 then
+                        pcall(function()
+                            local macroName = _G.EventColonyMacros and _G.EventColonyMacros[tostring(thisElevColony)]
+                            if macroName and macroName ~= "" then
+                                local EventMacroFolder = FOLDER .. "/event"
+                                local macroPath = EventMacroFolder .. "/" .. macroName .. ".json"
+                                if isfile(macroPath) then
+                                    eventStatus.Text = "🔧 Equip สำหรับ Colony " .. thisElevColony .. "..."
+                                    eventStatus.TextColor3 = Colors.Yellow
+                                    print("🔧 [Event] Auto Equip Colony " .. thisElevColony .. " → " .. macroName)
+
+                                    local RS = game:GetService("ReplicatedStorage")
+                                    local equipRemote = RS.Remotes.Towers.EquipTower
+                                    local unequipRemote = RS.Remotes.Towers.UnequipTower
+
+                                    -- อ่าน UUID จาก macro
+                                    local uniqueUUIDs = {}
+                                    local seenUUID = {}
+                                    local macroData = HttpService:JSONDecode(readfile(macroPath))
+                                    local actions = macroData
+                                    if type(macroData) == "table" and macroData.Actions then actions = macroData.Actions end
+                                    if type(actions) == "table" then
+                                        for _, act in ipairs(actions) do
+                                            if act.Type == "Spawn" then
+                                                local uuid = act.TowerName or (act.Args and act.Args[1])
+                                                if uuid and not seenUUID[uuid] then
+                                                    seenUUID[uuid] = true
+                                                    table.insert(uniqueUUIDs, uuid)
+                                                end
+                                            end
+                                        end
+                                    end
+
+                                    print("📋 [Event] Macro ต้องการ " .. #uniqueUUIDs .. " tower")
+
+                                    -- Step 1: อ่าน deck จาก Inventory GUI → Unequip ทุกตัว
+                                    local currentDeck = {}
+                                    pcall(function()
+                                        local invGui = Player.PlayerGui:FindFirstChild("Inventory")
+                                        if invGui then
+                                            local towersFrame = invGui:FindFirstChild("Towers")
+                                            if towersFrame then
+                                                for _, slot in pairs(towersFrame:GetChildren()) do
+                                                    if #slot.Name > 20 and slot.Name:find("-") then
+                                                        table.insert(currentDeck, slot.Name)
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end)
+
+                                    print("📋 [Event] Deck ปัจจุบัน: " .. #currentDeck .. " ตัว")
+
+                                    local unequipCount = 0
+                                    for _, deckUUID in ipairs(currentDeck) do
+                                        pcall(function() unequipRemote:FireServer(deckUUID) end)
+                                        unequipCount = unequipCount + 1
+                                        print("🔧 [Event] Unequip: " .. deckUUID)
+                                        task.wait(0.3)
+                                    end
+
+                                    if unequipCount > 0 then task.wait(1) end
+
+                                    -- Step 2: Equip ตัวที่ต้องการ
+                                    local equipCount = 0
+                                    for _, uuid in ipairs(uniqueUUIDs) do
+                                        pcall(function() equipRemote:FireServer(uuid) end)
+                                        equipCount = equipCount + 1
+                                        print("✅ [Event] Equip: " .. uuid)
+                                        task.wait(0.3)
+                                    end
+
+                                    eventStatus.Text = "🔧 Equip เสร็จ! (" .. equipCount .. " ตัว, ถอด " .. unequipCount .. " ตัว)"
+                                    eventStatus.TextColor3 = Colors.Green
+                                    print("🔧 [Event] Auto Equip เสร็จ! Equip: " .. equipCount .. " | Unequip: " .. unequipCount)
+                                end
+                            end
+                        end)
+                    end
 
                     eventStatus.Text = "🚀 ยิง Remote ตู้ " .. elevNum .. "..."
                     local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
@@ -3508,7 +3610,7 @@ local function LoadMainUI()
                     setupStatusLbl.Text = ""
                 end
             end)
-            task.wait(1)
+            task.wait(0.3)
         end
     end)
 
@@ -4053,11 +4155,16 @@ local function LoadMainUI()
 
     task.spawn(function()
         while toggleStroke and toggleStroke.Parent do
-            TweenService:Create(toggleStroke, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0}):Play()
-            task.wait(0.6)
-            if not toggleStroke or not toggleStroke.Parent then break end
-            TweenService:Create(toggleStroke, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.3}):Play()
-            task.wait(0.6)
+            for i = 0.3, 0, -0.05 do
+                if not toggleStroke or not toggleStroke.Parent then break end
+                toggleStroke.Transparency = i
+                task.wait(0.05)
+            end
+            for i = 0, 0.3, 0.05 do
+                if not toggleStroke or not toggleStroke.Parent then break end
+                toggleStroke.Transparency = i
+                task.wait(0.05)
+            end
         end
     end)
 
