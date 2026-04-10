@@ -187,28 +187,35 @@ task.spawn(function()
             -- ข้ามถ้าไม่มี GameGui (ไม่ได้อยู่ในด่าน)
             if not Player.PlayerGui:FindFirstChild("GameGui") then return end
             local isGameEndVisible = false
-            -- วิธี 1: เช็คปุ่ม replay/lobby
-            for _, v in pairs(Player.PlayerGui:GetDescendants()) do
-                if (v:IsA("TextButton") or v:IsA("ImageButton")) then
-                    local name = v.Name:lower()
-                    local text = v:IsA("TextButton") and v.Text:lower() or ""
-                    if (name:find("replay") or name:find("playagain") or name:find("retry") or 
-                        name:find("lobby") or name:find("exit") or
-                        text:find("replay") or text:find("play again") or text:find("retry") or
-                        text:find("go back to lobby") or text:find("back to lobby")) then
-                        if v.Visible and v.Parent and v.Parent.Visible ~= false then
-                            isGameEndVisible = true
-                            break
-                        end
-                    end
-                end
-            end
-            -- วิธี 2: เช็ค EndScreen Visible โดยตรง (Casino อาจไม่มีปุ่ม replay)
-            if not isGameEndVisible then
-                pcall(function()
-                    local endScreen = Player.PlayerGui:FindFirstChild("GameGui") and Player.PlayerGui.GameGui:FindFirstChild("EndScreen")
+            -- วิธี 1: เช็ค EndScreen Visible โดยตรง
+            pcall(function()
+                local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
+                if gameGui then
+                    local endScreen = gameGui:FindFirstChild("EndScreen")
                     if endScreen and endScreen.Visible then
                         isGameEndVisible = true
+                    end
+                end
+            end)
+            -- วิธี 2: เช็คปุ่ม replay/lobby จาก EndScreen children (ไม่ scan ทั้ง PlayerGui)
+            if not isGameEndVisible then
+                pcall(function()
+                    local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
+                    if gameGui then
+                        local endScreen = gameGui:FindFirstChild("EndScreen")
+                        if endScreen then
+                            for _, v in pairs(endScreen:GetChildren()) do
+                                if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
+                                    local name = v.Name:lower()
+                                    local text = v:IsA("TextButton") and v.Text:lower() or ""
+                                    if name:find("replay") or name:find("playagain") or name:find("lobby") or name:find("exit") or
+                                       text:find("replay") or text:find("play again") or text:find("back to lobby") then
+                                        isGameEndVisible = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
                     end
                 end)
             end
@@ -254,17 +261,26 @@ task.spawn(function()
         pcall(function()
             if _G.AutoToLobby and not _G.AutoStory and not _G.StoryMacroMode then
                 local isGameOver = false
-                for _, v in pairs(Player.PlayerGui:GetDescendants()) do
-                    if v:IsA("TextButton") and v.Visible then
-                        local text = v.Text:lower()
-                        if text:find("go back to lobby") or text:find("back to lobby") then
-                            if v.Parent and v.Parent.Visible ~= false then
-                                isGameOver = true
-                                break
+                pcall(function()
+                    local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
+                    if gameGui then
+                        local endScreen = gameGui:FindFirstChild("EndScreen")
+                        if endScreen and endScreen.Visible then
+                            isGameOver = true
+                        end
+                        if not isGameOver then
+                            for _, v in pairs(endScreen and endScreen:GetChildren() or {}) do
+                                if v:IsA("TextButton") and v.Visible then
+                                    local text = v.Text:lower()
+                                    if text:find("go back to lobby") or text:find("back to lobby") then
+                                        isGameOver = true
+                                        break
+                                    end
+                                end
                             end
                         end
                     end
-                end
+                end)
                 if isGameOver then
                     -- ✅ รอให้ webhook ส่งก่อน (สูงสุด 5 วิ)
                     if _G.DiscordURL and _G.DiscordURL ~= "" then

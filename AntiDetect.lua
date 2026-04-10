@@ -67,6 +67,23 @@ pcall(function()
     if hookmetamethod then
         old = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
+
+            -- 🚀 Early return: ถ้าไม่ใช่ InvokeServer → ออกทันที (ไม่ต้อง unpack args)
+            if method ~= "InvokeServer" then
+                return old(self, ...)
+            end
+
+            -- 🚀 Early return: ถ้าไม่ใช่ remote ที่เราสนใจ → ออกทันที
+            local remoteName = self.Name
+            if remoteName ~= "SpawnNewTower" and remoteName ~= "UpgradeTower" and remoteName ~= "SellTower" and remoteName ~= "GojoDomain" then
+                return old(self, ...)
+            end
+
+            -- 🚀 Early return: ถ้าไม่มีโหมดใดเปิดอยู่ → ออกทันที
+            if not _G.StorySetupMode and not _G._CasinoIsRecording and not _G._IsRecording then
+                return old(self, ...)
+            end
+
             local args = {...}
 
             -- ─── Shared state references (อ่านจาก _G ทุกครั้งเพื่อให้ sync) ───
