@@ -35,6 +35,7 @@ local SaveDashboardCache = _G.SaveDashboardCache
 local GetDashboardText = _G.GetDashboardText
 local SaveStoryTowers = _G.SaveStoryTowers
 local LoadStoryTowers = _G.LoadStoryTowers
+local LoadDashboardCache = _G.LoadDashboardCache
 local UserAuth = _G._UserAuth
 
 -- ShowLogin จะถูกประกาศใน LoginUI.lua ที่โหลดทีหลัง
@@ -822,47 +823,49 @@ local function LoadMainUI()
     dashMacro.TextXAlignment = Enum.TextXAlignment.Left
     dashMacro.ZIndex = 5
 
-    -- Dashboard update (once on load)
+    -- Dashboard update (Loop every 2s)
     task.spawn(function()
-        task.wait(2)
-        pcall(function()
-            -- Check if in-game (has leaderstats with Money changing) or lobby
-            local inGame = false
+        while true do
+            task.wait(2)
             pcall(function()
-                local gi = Player.PlayerGui:FindFirstChild("GameGui")
-                if gi and gi:FindFirstChild("Info") then inGame = true end
-            end)
+                -- Check if in-game (has leaderstats with Money changing) or lobby
+                local inGame = false
+                pcall(function()
+                    local gi = Player.PlayerGui:FindFirstChild("GameGui")
+                    if gi and gi:FindFirstChild("Info") then inGame = true end
+                end)
 
-            if inGame then
-                -- In-game: load from cached json
-                local cached = LoadDashboardCache()
-                local ls = Player:FindFirstChild("leaderstats")
-                if ls then
-                    local coins = ls:FindFirstChild("Coins")
-                    if coins then dashMoney.Text = "💰 Money: " .. tostring(coins.Value) end
-                    local gems = ls:FindFirstChild("Gems")
-                    if gems then dashGemsReal.Text = "💎 Gems: " .. tostring(gems.Value) end
+                if inGame then
+                    -- In-game: load from cached json
+                    local cached = LoadDashboardCache and LoadDashboardCache() or {}
+                    local ls = Player:FindFirstChild("leaderstats")
+                    if ls then
+                        local coins = ls:FindFirstChild("Coins")
+                        if coins then dashMoney.Text = "💰 Money: " .. tostring(coins.Value) end
+                        local gems = ls:FindFirstChild("Gems")
+                        if gems then dashGemsReal.Text = "💎 Gems: " .. tostring(gems.Value) end
+                    end
+                    if cached.Ducats then dashDucats.Text = "Ducats: " .. tostring(cached.Ducats) end
+                    if cached.Rerolls then dashRerolls.Text = "🔮 Rerolls: " .. tostring(cached.Rerolls) end
+                    if cached.Casino then dashCasino.Text = "🎰 Casino Points: " .. tostring(cached.Casino) end
+                else
+                    -- Lobby: read live + save cache
+                    if SaveDashboardCache then SaveDashboardCache() end
+                    local ls = Player:FindFirstChild("leaderstats")
+                    if ls then
+                        local coins = ls:FindFirstChild("Coins")
+                        if coins then dashMoney.Text = "💰 Money: " .. tostring(coins.Value) end
+                        local gems = ls:FindFirstChild("Gems")
+                        if gems then dashGemsReal.Text = "💎 Gems: " .. tostring(gems.Value) end
+                    end
+                    local cached = LoadDashboardCache and LoadDashboardCache() or {}
+                    if cached.Ducats then dashDucats.Text = "Ducats: " .. tostring(cached.Ducats) end
+                    if cached.Rerolls then dashRerolls.Text = "🔮 Rerolls: " .. tostring(cached.Rerolls) end
+                    if cached.Casino then dashCasino.Text = "🎰 Casino Points: " .. tostring(cached.Casino) end
                 end
-                if cached.Ducats then dashDucats.Text = "Ducats: " .. tostring(cached.Ducats) end
-                if cached.Rerolls then dashRerolls.Text = "🔮 Rerolls: " .. tostring(cached.Rerolls) end
-                if cached.Casino then dashCasino.Text = "🎰 Casino: " .. tostring(cached.Casino) end
-            else
-                -- Lobby: read live + save cache
-                SaveDashboardCache()
-                local ls = Player:FindFirstChild("leaderstats")
-                if ls then
-                    local coins = ls:FindFirstChild("Coins")
-                    if coins then dashMoney.Text = "💰 Money: " .. tostring(coins.Value) end
-                    local gems = ls:FindFirstChild("Gems")
-                    if gems then dashGemsReal.Text = "💎 Gems: " .. tostring(gems.Value) end
-                end
-                local cached = LoadDashboardCache()
-                if cached.Ducats then dashDucats.Text = "Ducats: " .. tostring(cached.Ducats) end
-                if cached.Rerolls then dashRerolls.Text = "🔮 Rerolls: " .. tostring(cached.Rerolls) end
-                if cached.Casino then dashCasino.Text = "🎰 Casino: " .. tostring(cached.Casino) end
-            end
-            dashMacro.Text = "📂 Macro: " .. (_G.SelectedFile or "None")
-        end)
+                dashMacro.Text = "📂 Macro: " .. (_G.SelectedFile or "None")
+            end)
+        end
     end)
 
     -- CONTROL PANEL
@@ -2092,6 +2095,8 @@ local function LoadMainUI()
         if IsRecording then
             CurrentData = {}
             PlacedTowers = {}
+            _G._CurrentData = CurrentData
+            _G._PlacedTowers = PlacedTowers
             print("🔴 Recording Started...")
         else
             if _G.SelectedFile ~= "None" then
@@ -2602,6 +2607,8 @@ local function LoadMainUI()
         if v then
             CurrentData = {}
             PlacedTowers = {}
+            _G._CurrentData = CurrentData
+            _G._PlacedTowers = PlacedTowers
             print("🔴 Event Recording Started...")
         else
             if _G.EventSelectedFile and _G.EventSelectedFile ~= "None" then
@@ -3308,6 +3315,8 @@ local function LoadMainUI()
         if v then
             CasinoCurrentData = {}
             CasinoPlacedTowers = {}
+            _G._CasinoCurrentData = CasinoCurrentData
+            _G._CasinoPlacedTowers = CasinoPlacedTowers
             StartCasinoDoorTracker()
             casinoRecStatus.Text = "🔴 กำลังอัด..."
             task.spawn(function()

@@ -108,6 +108,37 @@ local function SendGameEndNotification()
                         local line = "• **" .. displayName .. ":** " .. amt
                         if chance ~= "" then line = line .. " _(" .. chance .. ")_" end
                         table.insert(rewardLines, line)
+
+                        -- Update Dashboard Cache in Real-time
+                        pcall(function()
+                            local cached = {}
+                            if _G.LoadDashboardCache then cached = _G.LoadDashboardCache() end
+                            local addAmt = tonumber(amt:gsub(",", "")) or 0
+                            local nameLow = displayName:lower()
+                            local updated = false
+                            
+                            if nameLow:find("ducat") then
+                                local current = tonumber(tostring(cached.Ducats or "0"):gsub(",", "")) or 0
+                                cached.Ducats = tostring(current + addAmt)
+                                updated = true
+                            elseif nameLow:find("crystal") or nameLow:find("reroll") then
+                                local current = tonumber(tostring(cached.Rerolls or "0"):gsub(",", "")) or 0
+                                cached.Rerolls = tostring(current + addAmt)
+                                updated = true
+                            elseif nameLow:find("casino") then
+                                local current = tonumber(tostring(cached.Casino or "0"):gsub(",", "")) or 0
+                                cached.Casino = tostring(current + addAmt)
+                                updated = true
+                            elseif nameLow:find("culling") then
+                                local current = tonumber(tostring(cached.Casino or "0"):gsub(",", "")) or 0
+                                cached.Casino = tostring(current + math.floor(addAmt / 100))
+                                updated = true
+                            end
+                            
+                            if updated and _G._FOLDER and _G._Services and _G._Services.HttpService then
+                                writefile(_G._FOLDER.."/dashboard.json", _G._Services.HttpService:JSONEncode(cached))
+                            end
+                        end)
                     end
                 end
             end
