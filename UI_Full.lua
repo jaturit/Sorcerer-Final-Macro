@@ -36,6 +36,7 @@ local GetDashboardText = _G.GetDashboardText
 local SaveStoryTowers = _G.SaveStoryTowers
 local LoadStoryTowers = _G.LoadStoryTowers
 local LoadDashboardCache = _G.LoadDashboardCache
+local HookEnabled = _G._HookEnabled
 local UserAuth = _G._UserAuth
 
 -- ShowLogin จะถูกประกาศใน LoginUI.lua ที่โหลดทีหลัง
@@ -2092,6 +2093,7 @@ local function LoadMainUI()
     createToggle(RecBox, "🔴 Record Macro", false, function(v)
         if not HookEnabled then warn("⚠️ Recording not available"); return end
         IsRecording = v
+        _G._IsRecording = v
         if IsRecording then
             CurrentData = {}
             PlacedTowers = {}
@@ -2604,6 +2606,7 @@ local function LoadMainUI()
     createToggle(EventFileBox, "🔴 Record Event Macro", false, function(v)
         if not HookEnabled then warn("⚠️ Hook not available"); return end
         IsRecording = v
+        _G._IsRecording = v
         if v then
             CurrentData = {}
             PlacedTowers = {}
@@ -3312,6 +3315,7 @@ local function LoadMainUI()
             casinoRecStatus.Text = "❌ เลือกไฟล์ก่อน"; return
         end
         CasinoIsRecording = v
+        _G._CasinoIsRecording = v
         if v then
             CasinoCurrentData = {}
             CasinoPlacedTowers = {}
