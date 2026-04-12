@@ -112,6 +112,30 @@ local function RunMacroLogic()
     task.spawn(function()
         RandomDelay(1, 3)
 
+        -- ⏳ รอด่านที่มีช่วง Setup (เช่น Raid ที่ขึ้น Waiting for all player to load...)
+        local waitLoading = 0
+        while _G.AutoPlay and waitLoading < 120 do
+            local isWaitingMsg = false
+            pcall(function()
+                local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
+                if gameGui then
+                    for _, v in pairs(gameGui:GetDescendants()) do
+                        if v:IsA("TextLabel") and v.Visible and (v.Text:lower():find("waiting for all") or v.Text:lower():find("starting in")) then
+                            isWaitingMsg = true
+                            break
+                        end
+                    end
+                end
+            end)
+            if not isWaitingMsg then break end
+            waitLoading = waitLoading + 1
+            if waitLoading % 2 == 0 then
+                print("⏳ รอหมดช่วง Countdown เข้าด่าน (" .. waitLoading .. "s)...")
+            end
+            task.wait(1)
+        end
+        if not _G.AutoPlay then return end
+
         -- Extract skill actions and run them in a separate thread based on wave+time
         local skillActions = {}
         for _, act in ipairs(data) do
