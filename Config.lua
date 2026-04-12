@@ -285,10 +285,18 @@ _G.LoadConfig = LoadConfig
 
 local function GetCurrentMapName()
     local mapFolder = workspace:FindFirstChild("Map")
+    local prefix = ""
+    pcall(function()
+        local pGui = game.Players.LocalPlayer:FindFirstChild("PlayerGui")
+        local cg = pGui and pGui:FindFirstChild("CullingGames")
+        if cg and (cg.Enabled or (cg:FindFirstChild("Modifiers") and cg.Modifiers.Visible)) then
+            prefix = "[Event] "
+        end
+    end)
     if mapFolder then
         local children = mapFolder:GetChildren()
         if #children > 0 then
-            return children[1].Name
+            return prefix .. children[1].Name
         end
     end
     return nil

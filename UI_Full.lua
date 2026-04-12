@@ -2796,11 +2796,19 @@ local function LoadMainUI()
             -- เช็คว่าอยู่ในด่านแล้วหรือยัง
             local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
             local hasInfo = gameGui and gameGui:FindFirstChild("Info")
-            if hasInfo then
+            local isEventMode = false
+            pcall(function()
+                local cg = Player.PlayerGui:FindFirstChild("CullingGames")
+                if cg and (cg.Enabled or (cg:FindFirstChild("Modifiers") and cg.Modifiers.Visible)) then
+                    isEventMode = true
+                end
+            end)
+
+            if hasInfo and isEventMode then
                 -- อยู่ในด่านแล้ว → เลือกการ์ด + เล่น macro
                 if STATE ~= "IN_GAME" then
                     STATE = "IN_GAME"
-                    eventStatus.Text = "✅ เข้าด่านแล้ว!"
+                    eventStatus.Text = "✅ เข้าด่านEventแล้ว!"
                     print("📍 [Event] IN_GAME - เข้าด่านสำเร็จ")
 
                     task.wait(3)
