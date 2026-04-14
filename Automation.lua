@@ -646,33 +646,25 @@ local function LoadGoodFarmState()
     pcall(function()
         if isfile(_G._GOODFARM_STATE_FILE) then
             local data = game:GetService("HttpService"):JSONDecode(readfile(_G._GOODFARM_STATE_FILE))
-            -- ถ้าขนาดคิวไม่เท่าเดิม (มีการแก้ไขคิว) ให้รีเซ็ตใหม่เพื่อป้องกัน Index เพี้ยน
-            if data.LastQueueLength == #(_G.GoodFarmQueue or {}) then
-                _G.GoodFarmCurrentMode = data.CurrentIdx or 1
-                _G.GoodFarmRoundsDone = data.RoundsDone or 0
+            local queueLen = #(_G.GoodFarmQueue or {})
+            _G.GoodFarmCurrentMode = math.clamp(data.CurrentIdx or 1, 1, math.max(queueLen, 1))
+            _G.GoodFarmRoundsDone = data.RoundsDone or 0
 
-                -- 🛡️ [Pre-emptive Safeguard] เฉพาะตอนอยู่ Lobby: ถ้าจบรอบแล้ว ให้สั่งปิด Flag ทันทีป้องกันการ Join ซ้ำ
-                local idx = _G.GoodFarmCurrentMode
-                local q = (_G.GoodFarmQueue or {})[idx]
-                if q and q.Rounds > 0 and _G.GoodFarmRoundsDone >= q.Rounds and GF_IsInLobby() then
-                    if _G.SetEventToggle then _G.SetEventToggle(false) end
-                    if _G.SetEventMacroToggle then _G.SetEventMacroToggle(false) end
-                    if _G.SetEventEquipToggle then _G.SetEventEquipToggle(false) end
-                    if _G.SetDashboardAutoPlay then _G.SetDashboardAutoPlay(false) end
-
-                    _G.AutoEvent = false
-                    _G.AutoEventMacro = false
-                    _G.AutoEventEquip = false
-                    _G.AutoJoinCasino = false
-                    _G.AutoCasinoPlay = false
-                    _G.AutoCasinoEnabled = false
-                    _G.AutoPlay = false
-                    -- ไม่ต้อง Save JSON ตรงนี้ เพราะเราแค่ปิด Flag ชั่วคราวให้ Manager มาจัดการต่อ
-                end
-            else
-                _G.GoodFarmRoundsDone = 0
-                _G.GoodFarmCurrentMode = 1
-                SaveGoodFarmState()
+            -- 🛡️ Safeguard: ถ้าจบรอบแล้ว + อยู่ lobby → ปิด flag ป้องกัน join ซ้ำ
+            local idx = _G.GoodFarmCurrentMode
+            local q = (_G.GoodFarmQueue or {})[idx]
+            if q and q.Rounds > 0 and _G.GoodFarmRoundsDone >= q.Rounds and GF_IsInLobby() then
+                if _G.SetEventToggle then _G.SetEventToggle(false) end
+                if _G.SetEventMacroToggle then _G.SetEventMacroToggle(false) end
+                if _G.SetEventEquipToggle then _G.SetEventEquipToggle(false) end
+                if _G.SetDashboardAutoPlay then _G.SetDashboardAutoPlay(false) end
+                _G.AutoEvent = false
+                _G.AutoEventMacro = false
+                _G.AutoEventEquip = false
+                _G.AutoJoinCasino = false
+                _G.AutoCasinoPlay = false
+                _G.AutoCasinoEnabled = false
+                _G.AutoPlay = false
             end
         end
     end)
@@ -787,7 +779,19 @@ task.spawn(function()
                 _G.AutoCasinoEnabled = true
                 _G.AutoCasinoPlay = true
                 _G.SaveConfig()
-            elseif mode ~= "Event" then
+            elseif mode == "Event" then
+                -- Event: เปิด flag ตรงนี้เลย ไม่ต้องรอ join section
+                GF_Status("🎪 เปิดระบบ Auto Event...")
+                _G.AutoEvent = true
+                _G.AutoEventMacro = true
+                _G.AutoEventEquip = true
+                _G.SaveConfig()
+                task.wait(1)
+                -- Sync UI toggles
+                if _G.SetEventToggle then _G.SetEventToggle(true) end
+                if _G.SetEventMacroToggle then _G.SetEventMacroToggle(true) end
+                if _G.SetEventEquipToggle then _G.SetEventEquipToggle(true) end
+            else
                 -- [4.1] ตั้งค่าไฟล์ Macro ก่อนเริ่มรัน
                 if current.MacroFile ~= "None" and current.MacroFile ~= "" then
                     _G.SelectedFile = current.MacroFile
@@ -862,26 +866,40 @@ task.spawn(function()
                 end
 
             elseif mode == "Event" then
-                -- ใช้ระบบ AutoEvent เดิมจัดการทั้งหมด (หาตู้ เลือกการ์ด equip เล่น macro)
-                -- แค่เปิด flag แล้วระบบ Event ใน UI_Full.lua จะทำงานเอง
-                GF_Status("🎪 เปิดระบบ Auto Event...")
-                
-                _G.AutoEvent = true
-                _G.AutoEventMacro = true
-                _G.AutoEventEquip = true
-
-                task.spawn(function()
-                    local t = 0
-                    while not _G.SetEventToggle and t < 20 do task.wait(0.5); t = t + 1 end
-                    if _G.SetEventToggle then _G.SetEventToggle(true) end
-                    if _G.SetEventMacroToggle then _G.SetEventMacroToggle(true) end
-                    if _G.SetEventEquipToggle then _G.SetEventEquipToggle(true) end
-                end)
-                -- สลับ macro ของ Event ให้ตรงกับที่ตั้งไว้ใน Good Farm
-                if current.MacroFile ~= "None" and current.MacroFile ~= "" then
-                    _G.EventSelectedFile = current.MacroFile
+                -- Event ใช้ AutoEvent loop จัดการ join เอง → GoodFarm รอจนออก lobby
+                -- Event join ช้ากว่า mode อื่น → รอนานกว่า 300 วิ
+                local eventWait = 0
+                while GF_IsInLobby() and _G.AutoGoodFarm and eventWait < 300 do
+                    task.wait(2)
+                    eventWait = eventWait + 2
                 end
-                _G.SaveConfig()
+                if not _G.AutoGoodFarm then return end
+                if not GF_IsInLobby() then
+                    GF_Status("✅ [Event] เข้าด่านสำเร็จ! รอบ " .. _G.GoodFarmRoundsDone .. "/" .. current.Rounds)
+                    _G.SaveConfig()
+                    while _G.AutoGoodFarm and not GF_IsInLobby() do task.wait(2) end
+                    if _G.AutoGoodFarm then
+                        _G.AutoEvent = false; _G.AutoEventMacro = false; _G.AutoEventEquip = false
+                        _G.AutoPlay = false; _G._IsEventAutoPlay = false
+                        _G.SaveConfig()
+                        task.wait(1)
+                        if _G.GoodFarmRoundsDone >= current.Rounds then
+                            GF_Status("🏆 Event ครบ " .. current.Rounds .. " รอบ!")
+                            _G.GoodFarmRoundsDone = 0; SaveGoodFarmState()
+                            local nextIdx = GF_FindAnyActiveMode(idx + 1)
+                            if not nextIdx then nextIdx = GF_FindAnyActiveMode(1) end
+                            if nextIdx then _G.GoodFarmCurrentMode = nextIdx; SaveGoodFarmState(); _G.SaveConfig() end
+                        end
+                    end
+                else
+                    _G.GoodFarmRoundsDone = math.max(0, (_G.GoodFarmRoundsDone or 1) - 1)
+                    SaveGoodFarmState()
+                    _G.AutoEvent = false; _G.AutoEventMacro = false; _G.AutoEventEquip = false
+                    _G.SaveConfig()
+                    GF_Status("❌ Event เข้าด่านไม่สำเร็จ")
+                end
+                task.wait(3)
+                return
 
             elseif mode == "InfiniteNew" then
                 -- Infinite New (Gauntlet): Copy teleport จาก Casino + remote จากผู้ใช้
