@@ -501,9 +501,493 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════
+-- 🌾 GOOD FARM (Auto All Farm Queue System)
+-- ═══════════════════════════════════════════════════════
+
+-- Helper: Equip towers from macro file (copied from Event auto-equip logic)
+local function GoodFarmEquipFromMacro(macroPath)
+    local ok = false
+    pcall(function()
+        if not isfile(macroPath) then
+            print("🌾 [GoodFarm] ไม่เจอไฟล์: " .. macroPath)
+            return
+        end
+        local HttpService = game:GetService("HttpService")
+        local RS = game:GetService("ReplicatedStorage")
+        local equipRemote = RS.Remotes.Towers.EquipTower
+        local unequipRemote = RS.Remotes.Towers.UnequipTower
+
+        -- อ่าน UUID จาก macro (รองรับทั้ง macro ปกติ + casino)
+        -- macro ปกติ: act.TowerName = UUID
+        -- casino macro: act.TowerID = UUID
+        local uniqueUUIDs = {}
+        local seenUUID = {}
+
+        local macroData = HttpService:JSONDecode(readfile(macroPath))
+        local actions = macroData
+        if type(macroData) == "table" and macroData.Actions then actions = macroData.Actions end
+        if type(actions) == "table" then
+            for _, act in ipairs(actions) do
+                if act.Type == "Spawn" then
+                    local uuid = act.TowerName or act.TowerID or (act.Args and act.Args[1])
+                    if uuid and not seenUUID[uuid] then
+                        seenUUID[uuid] = true
+                        table.insert(uniqueUUIDs, uuid)
+                    end
+                end
+            end
+        end
+
+        print("🌾 [GoodFarm] UUID จาก macro: " .. #uniqueUUIDs .. " ตัว")
+
+        if #uniqueUUIDs == 0 then
+            print("⚠️ [GoodFarm] ไม่มี tower ที่ต้อง equip (ข้ามขั้นตอน equip)")
+            ok = true
+            return
+        end
+
+        -- อ่าน deck ปัจจุบัน → Unequip ทุกตัว
+        local currentDeck = {}
+        pcall(function()
+            local invGui = Player.PlayerGui:FindFirstChild("Inventory")
+            if invGui then
+                local towersFrame = invGui:FindFirstChild("Towers")
+                if towersFrame then
+                    for _, slot in pairs(towersFrame:GetChildren()) do
+                        if #slot.Name > 20 and slot.Name:find("-") then
+                            table.insert(currentDeck, slot.Name)
+                        end
+                    end
+                end
+            end
+        end)
+
+        print("🌾 [GoodFarm] Deck ปัจจุบัน: " .. #currentDeck .. " | ต้องการ Equip: " .. #uniqueUUIDs)
+
+        for _, deckUUID in ipairs(currentDeck) do
+            pcall(function() unequipRemote:FireServer(deckUUID) end)
+            task.wait(0.6)
+        end
+        if #currentDeck > 0 then task.wait(1.5) end
+
+        for _, uuid in ipairs(uniqueUUIDs) do
+            pcall(function() equipRemote:FireServer(uuid) end)
+            task.wait(0.6)
+        end
+        print("🌾 [GoodFarm] Equip เสร็จ! (" .. #uniqueUUIDs .. " ตัว)")
+        ok = true
+    end)
+    return ok
+end
+
+-- Helper: ดูว่าอยู่ใน Lobby หรือยัง (copied from Utilities.lua)
+local function GF_IsInLobby()
+    local inLobby = false
+    pcall(function()
+        if workspace:FindFirstChild("Teleporters") and workspace.Teleporters:FindFirstChild("Teleporter1") then
+            inLobby = true
+        end
+    end)
+    return inLobby
+end
+
+-- Helper: ตรวจจับ Game End Screen
+local function GF_IsGameEnd()
+    local isEnd = false
+    pcall(function()
+        local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
+        if gameGui then
+            local endScreen = gameGui:FindFirstChild("EndScreen")
+            if endScreen and endScreen.Visible then
+                isEnd = true
+            end
+        end
+    end)
+    return isEnd
+end
+
+-- Helper: Update status label
+local function GF_Status(text, color)
+    pcall(function()
+        if _G._GoodFarmStatusLabel then
+            _G._GoodFarmStatusLabel.Text = text
+            if color then _G._GoodFarmStatusLabel.TextColor3 = color end
+        end
+    end)
+    print("🌾 [GoodFarm] " .. text)
+end
+
+-- Helper: หาโหมดถัดไปที่มี Rounds > 0
+local function GF_FindNextMode(startIdx)
+    local queue = _G.GoodFarmQueue
+    if not queue or #queue == 0 then return nil end
+    for i = 1, #queue do
+        local idx = ((startIdx - 1 + i - 1) % #queue) + 1
+        if queue[idx] and queue[idx].Rounds > 0 then
+            return idx
+        end
+    end
+    return nil
+end
+
+-- 📂 ระบบบันทึกความคืบหน้า GoodFarm แยกไฟล์ (Persistent State)
+local function SaveGoodFarmState()
+    pcall(function()
+        local state = {
+            CurrentIdx = _G.GoodFarmCurrentMode or 1,
+            RoundsDone = _G.GoodFarmRoundsDone or 0,
+            LastQueueLength = #(_G.GoodFarmQueue or {})
+        }
+        writefile(_G._GOODFARM_STATE_FILE, game:GetService("HttpService"):JSONEncode(state))
+    end)
+end
+
+local function LoadGoodFarmState()
+    pcall(function()
+        if isfile(_G._GOODFARM_STATE_FILE) then
+            local data = game:GetService("HttpService"):JSONDecode(readfile(_G._GOODFARM_STATE_FILE))
+            -- ถ้าขนาดคิวไม่เท่าเดิม (มีการแก้ไขคิว) ให้รีเซ็ตใหม่เพื่อป้องกัน Index เพี้ยน
+            if data.LastQueueLength == #(_G.GoodFarmQueue or {}) then
+                _G.GoodFarmCurrentMode = data.CurrentIdx or 1
+                _G.GoodFarmRoundsDone = data.RoundsDone or 0
+
+                -- 🛡️ [Pre-emptive Safeguard] เฉพาะตอนอยู่ Lobby: ถ้าจบรอบแล้ว ให้สั่งปิด Flag ทันทีป้องกันการ Join ซ้ำ
+                local idx = _G.GoodFarmCurrentMode
+                local q = (_G.GoodFarmQueue or {})[idx]
+                if q and q.Rounds > 0 and _G.GoodFarmRoundsDone >= q.Rounds and GF_IsInLobby() then
+                    if _G.SetEventToggle then _G.SetEventToggle(false) end
+                    if _G.SetEventMacroToggle then _G.SetEventMacroToggle(false) end
+                    if _G.SetEventEquipToggle then _G.SetEventEquipToggle(false) end
+                    if _G.SetDashboardAutoPlay then _G.SetDashboardAutoPlay(false) end
+
+                    _G.AutoEvent = false
+                    _G.AutoEventMacro = false
+                    _G.AutoEventEquip = false
+                    _G.AutoJoinCasino = false
+                    _G.AutoCasinoPlay = false
+                    _G.AutoCasinoEnabled = false
+                    _G.AutoPlay = false
+                    -- ไม่ต้อง Save JSON ตรงนี้ เพราะเราแค่ปิด Flag ชั่วคราวให้ Manager มาจัดการต่อ
+                end
+            else
+                _G.GoodFarmRoundsDone = 0
+                _G.GoodFarmCurrentMode = 1
+                SaveGoodFarmState()
+            end
+        end
+    end)
+end
+
+-- เรียกโหลดทันทีเมื่อโหลดสคริปต์ (เพราะวาร์ปคือการเริ่มสคริปต์ใหม่)
+LoadGoodFarmState()
+
+-- Main GoodFarm Loop
+task.spawn(function()
+    while true do
+        pcall(function()
+            if not _G.AutoGoodFarm then return end
+            if not GF_IsInLobby() then return end
+
+            -- ดึง State ล่าสุดจากไฟล์ทุกรอบลูป (กันเหนียว)
+            LoadGoodFarmState()
+            
+            local idx = _G.GoodFarmCurrentMode or 1
+            local queue = _G.GoodFarmQueue
+            if not queue or #queue == 0 then return end
+
+            local function GF_FindAnyActiveMode(startIdx)
+                for i = 1, #queue do
+                    local ni = ((startIdx - 1 + i - 1) % #queue) + 1
+                    if queue[ni] and queue[ni].Rounds > 0 then return ni end
+                end
+                return nil
+            end
+
+            local current = queue[idx]
+
+            -- ถ้า mode ปัจจุบัน Rounds = 0 หรือครบรอบแล้ว → หา mode ถัดไป
+            if not current or current.Rounds <= 0 or (_G.GoodFarmRoundsDone >= current.Rounds) then
+                _G.GoodFarmRoundsDone = 0
+                local nextIdx = GF_FindAnyActiveMode(idx + 1)
+                
+                -- ถ้าหาโหมดถัดไปแบบวนลูป (startIdx+1...end...1...startIdx) แล้วยังไม่เจอ
+                -- หรือถ้ามันวนกลับมาที่จุดเดิมและจุดเดิมก็เสร็จแล้ว แปลว่า "จบทุกคิวแล้ว"
+                if not nextIdx or (nextIdx == idx and _G.GoodFarmRoundsDone >= current.Rounds) then
+                    -- จบทุกคิว: รีเซ็ตทุกอย่างกลับไปเริ่มคิว 1 ใหม่ตามคำขอ USER
+                    GF_Status("⭐ จบทุกคิวแล้ว! เริ่มต้นวนรอบใหม่จากคิวที่ 1...")
+                    _G.GoodFarmCurrentMode = GF_FindAnyActiveMode(1) or 1
+                    _G.GoodFarmRoundsDone = 0
+                    SaveGoodFarmState()
+                    _G.SaveConfig()
+                    return
+                end
+                
+                _G.GoodFarmCurrentMode = nextIdx
+                _G.GoodFarmRoundsDone = 0
+                SaveGoodFarmState()
+                _G.SaveConfig()
+                current = queue[nextIdx]
+                idx = nextIdx
+            end
+
+            local mode = current.Mode
+
+            -- Event/Casino mode → ระบบเดิมจัดการตัวเอง (ไม่ต้องเช็ค Macro จากหน้า Good Farm)
+            if mode ~= "Event" and mode ~= "Casino" then
+                if not current or current.MacroFile == "None" or current.MacroFile == "" then
+                    GF_Status("⚠️ [" .. (current and current.Mode or "?") .. "] ยังไม่ได้เลือก Macro")
+                    return
+                end
+
+                local FOLDER = _G._FOLDER
+                local macroPath = FOLDER .. "/" .. current.MacroFile .. ".json"
+
+                -- [1] สลับ macro file
+                GF_Status("📁 สลับ Macro → " .. current.MacroFile)
+                _G.SelectedFile = current.MacroFile
+                _G.SaveConfig()
+                task.wait(0.5)
+
+                -- [2] Equip ตัวละครจาก macro ปกติ
+                GF_Status("🔧 Equip ตัวจากมาโคร...")
+                GoodFarmEquipFromMacro(macroPath)
+                task.wait(1)
+            elseif mode == "Casino" then
+                -- พิเศษสำหรับ Casino: ระบบเดิมไม่มี Auto Equip หน้า UI, ให้ Good Farm ดึงมาใส่ให้
+                local casinoFile = _G.CasinoSelectedFile
+                if casinoFile and casinoFile ~= "None" and casinoFile ~= "" then
+                    local casinoMacroPath = _G._CASINO_FOLDER .. "/" .. casinoFile .. ".json"
+                    if isfile(casinoMacroPath) then
+                        GF_Status("🔧 Equip ตัวสำหรับ Casino (ดึงจากไฟล์ Casino)...")
+                        GoodFarmEquipFromMacro(casinoMacroPath)
+                        task.wait(1)
+                    end
+                end
+            end
+
+            -- [3] เปิด AutoPlay ตามโหมด
+            -- [3] ปิด flag ของ mode ก่อนหน้าทุกรอบก่อนเปิด mode ใหม่ (ไม่ให้ mode เก่าซ้อนทับกัน)
+            _G.AutoCasinoEnabled = false
+            _G.AutoCasinoPlay = false
+            _G.AutoJoinCasino = false
+            
+            if _G.SetEventToggle then _G.SetEventToggle(false) end
+            if _G.SetEventMacroToggle then _G.SetEventMacroToggle(false) end
+            if _G.SetEventEquipToggle then _G.SetEventEquipToggle(false) end
+            
+            _G.AutoEvent = false
+            _G.AutoEventMacro = false
+            _G.AutoEventEquip = false
+            _G.AutoPlay = false
+            task.wait(0.3)
+
+            -- [4] เปิด AutoPlay ตามโหมด
+            if mode == "Casino" then
+                GF_Status("🃏 เปิดระบบ Auto Casino...")
+                _G.AutoCasinoEnabled = true
+                _G.AutoCasinoPlay = true
+                _G.SaveConfig()
+            elseif mode ~= "Event" then
+                -- [4.1] ตั้งค่าไฟล์ Macro ก่อนเริ่มรัน
+                if current.MacroFile ~= "None" and current.MacroFile ~= "" then
+                    _G.SelectedFile = current.MacroFile
+                    print("⚙️ [GoodFarm] เลือกไฟล์ Macro: " .. current.MacroFile)
+                end
+                
+                -- [4.2] เปิดระบบ AutoPlay และ Sync UI (เพิ่มระบบรอ UI พร้อม)
+                _G._IsEventAutoPlay = false
+                _G.AutoPlay = true
+                print("▶️ [GoodFarm] เปิดระบบ Auto Play Macro...")
+
+                task.spawn(function()
+                    local t = 0
+                    while not _G.SetDashboardAutoPlay and t < 20 do
+                        task.wait(0.5)
+                        t = t + 1
+                    end
+                    if _G.SetDashboardAutoPlay then 
+                        _G.SetDashboardAutoPlay(true) 
+                        print("📺 [GoodFarm] Sync หน้า Dashboard สำเร็จ")
+                    end
+                end)
+                
+                -- [4.3] เริ่มรัน Logic (ต้องทำหลังตั้งค่าไฟล์เสร็จ)
+                if _G.RunMacroLogic then 
+                    _G.RunMacroLogic() 
+                    print("🚀 [GoodFarm] เริ่มรัน Macro Logic สำเร็จ")
+                end
+            end
+            
+            _G.AutoToLobby = true
+            _G.AutoReplay = false -- ปิด Replay เพื่อให้ AutoToLobby จัดการแทน
+
+            -- [5] Join ด่านตาม Mode
+            GF_Status("🚀 [" .. mode .. "] กำลังเข้าด่าน...")
+
+            if mode == "Casino" then
+                -- Copy จาก AutoJoinCasino
+                local elevators = workspace:FindFirstChild("HakariTeleporters")
+                if elevators then
+                    local targetElevator = elevators:GetChildren()[1]
+                    if targetElevator then
+                        local char = Player.Character
+                        local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+                        local humanoid = char and char:FindFirstChild("Humanoid")
+                        if rootPart then
+                            local entrance = targetElevator:FindFirstChild("Teleports") and targetElevator.Teleports:FindFirstChild("Entrance")
+                            if entrance then
+                                rootPart.CFrame = entrance.CFrame
+                                task.wait(0.3)
+                                if humanoid then
+                                    local basePos = entrance.Position
+                                    local offsets = {
+                                        Vector3.new(2,0,0), Vector3.new(-2,0,0),
+                                        Vector3.new(0,0,2), Vector3.new(0,0,-2),
+                                        Vector3.new(0,0,0)
+                                    }
+                                    for _, offset in ipairs(offsets) do humanoid:MoveTo(basePos + offset); task.wait(0.3) end
+                                end
+                                task.wait(0.3)
+                            end
+                        end
+                        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                        if remotes and remotes:FindFirstChild("HakariTeleporters") then
+                            local hakari = remotes.HakariTeleporters
+                            if hakari:FindFirstChild("ChooseStage") then hakari.ChooseStage:FireServer(targetElevator, _G.StoryFriendsOnly); task.wait(0.5) end
+                            if hakari:FindFirstChild("Start") then hakari.Start:FireServer(targetElevator) end
+                        end
+                    end
+                end
+
+            elseif mode == "Event" then
+                -- ใช้ระบบ AutoEvent เดิมจัดการทั้งหมด (หาตู้ เลือกการ์ด equip เล่น macro)
+                -- แค่เปิด flag แล้วระบบ Event ใน UI_Full.lua จะทำงานเอง
+                GF_Status("🎪 เปิดระบบ Auto Event...")
+                
+                _G.AutoEvent = true
+                _G.AutoEventMacro = true
+                _G.AutoEventEquip = true
+
+                task.spawn(function()
+                    local t = 0
+                    while not _G.SetEventToggle and t < 20 do task.wait(0.5); t = t + 1 end
+                    if _G.SetEventToggle then _G.SetEventToggle(true) end
+                    if _G.SetEventMacroToggle then _G.SetEventMacroToggle(true) end
+                    if _G.SetEventEquipToggle then _G.SetEventEquipToggle(true) end
+                end)
+                -- สลับ macro ของ Event ให้ตรงกับที่ตั้งไว้ใน Good Farm
+                if current.MacroFile ~= "None" and current.MacroFile ~= "" then
+                    _G.EventSelectedFile = current.MacroFile
+                end
+                _G.SaveConfig()
+
+            elseif mode == "InfiniteNew" then
+                -- Infinite New (Gauntlet): Copy teleport จาก Casino + remote จากผู้ใช้
+                local gauntletTPs = workspace:FindFirstChild("Gauntletteleporters")
+                if gauntletTPs then
+                    local targetElevator = gauntletTPs:FindFirstChild("Elevator4")
+                    if targetElevator then
+                        local char = Player.Character
+                        local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+                        local humanoid = char and char:FindFirstChild("Humanoid")
+                        if rootPart then
+                            local entrance = targetElevator:FindFirstChild("Teleports") and targetElevator.Teleports:FindFirstChild("Entrance")
+                            if entrance then
+                                rootPart.CFrame = entrance.CFrame
+                                task.wait(0.3)
+                                if humanoid then
+                                    local basePos = entrance.Position
+                                    local offsets = {
+                                        Vector3.new(2,0,0), Vector3.new(-2,0,0),
+                                        Vector3.new(0,0,2), Vector3.new(0,0,-2),
+                                        Vector3.new(0,0,0)
+                                    }
+                                    for _, offset in ipairs(offsets) do humanoid:MoveTo(basePos + offset); task.wait(0.3) end
+                                end
+                                task.wait(0.3)
+                            end
+                        end
+                        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                        if remotes and remotes:FindFirstChild("GauntletTeleporters") then
+                            local gauntlet = remotes.GauntletTeleporters
+                            if gauntlet:FindFirstChild("ChooseStage") then
+                                gauntlet.ChooseStage:FireServer(targetElevator, false)
+                                task.wait(0.5)
+                            end
+                            if gauntlet:FindFirstChild("Start") then
+                                gauntlet.Start:FireServer(targetElevator)
+                            end
+                        end
+                    end
+                end
+
+            end
+
+            -- [6] รอจนกว่าจะเข้าด่านได้ (ออกจาก Lobby)
+            local waitCount = 0
+            while GF_IsInLobby() and _G.AutoGoodFarm and waitCount < 60 do
+                task.wait(1)
+                waitCount = waitCount + 1
+            end
+
+            if not _G.AutoGoodFarm then return end
+
+            if not GF_IsInLobby() then
+                -- เข้าด่านสำเร็จ → นับรอบตอนนี้ (ไม่นับก่อนเข้า)
+                _G.GoodFarmRoundsDone = (_G.GoodFarmRoundsDone or 0) + 1
+                SaveGoodFarmState()
+                GF_Status("✅ [" .. mode .. "] เข้าด่านสำเร็จ! รอบ " .. _G.GoodFarmRoundsDone .. "/" .. current.Rounds)
+                _G.SaveConfig()
+
+                -- รอจนกลับ lobby (สคริปอาจหลุดแล้ว loadstring ใหม่)
+                while _G.AutoGoodFarm and not GF_IsInLobby() do
+                    task.wait(2)
+                end
+
+                -- กลับมา lobby แล้ว → ปิด flag ทุกระบบก่อน
+                if _G.AutoGoodFarm then
+                    _G.AutoCasinoEnabled = false
+                    _G.AutoCasinoPlay = false
+                    _G.AutoJoinCasino = false
+                    _G.AutoEvent = false
+                    _G.AutoEventMacro = false
+                    _G.AutoEventEquip = false
+                    _G.AutoPlay = false
+                    _G._IsEventAutoPlay = false
+                    _G.SaveConfig()
+                    task.wait(1)
+
+                    -- ตรวจว่าครบรอบแล้วไหม
+                    if _G.GoodFarmRoundsDone >= current.Rounds then
+                        GF_Status("🏆 " .. mode .. " ครบ " .. current.Rounds .. " รอบแล้ว! สลับ mode...")
+                        _G.GoodFarmRoundsDone = 0
+                        SaveGoodFarmState()
+
+                        local nextIdx = GF_FindAnyActiveMode(idx + 1)
+                        if not nextIdx then nextIdx = GF_FindAnyActiveMode(1) end
+                        if nextIdx then
+                            _G.GoodFarmCurrentMode = nextIdx
+                            SaveGoodFarmState()
+                            _G.SaveConfig()
+                            GF_Status("🔄 สลับไป mode: " .. queue[nextIdx].Mode)
+                        end
+                    end
+                end
+            else
+                GF_Status("❌ เข้าด่านไม่สำเร็จ รอเริ่มใหม่...")
+            end
+
+            task.wait(3) -- รอจัดคิวรอบใหม่
+        end)
+        task.wait(3)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════
 -- 📤 EXPORT
 -- ═══════════════════════════════════════════════════════
 
 _G.SendGameEndNotification = SendGameEndNotification
+_G.SaveGoodFarmState = SaveGoodFarmState
 
 print("✅ [Module 6/12] Automation.lua loaded successfully")

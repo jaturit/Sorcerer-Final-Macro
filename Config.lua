@@ -20,6 +20,7 @@ local CASINO_FOLDER = FOLDER.."/Casino_Macros"
 local AUTH_FILE = FOLDER.."/user_auth.json"
 local CONFIG_FILE = FOLDER.."/settings.json"
 local MAP_CONFIG_FILE = FOLDER.."/map_macros.json"
+local GOODFARM_STATE_FILE = FOLDER.."/goodfarm_state.json"
 
 pcall(function()
     if not isfolder(FOLDER) then makefolder(FOLDER) end
@@ -39,6 +40,7 @@ _G._Player = Player
 _G._PlayerGui = PlayerGui
 _G._FOLDER = FOLDER
 _G._CASINO_FOLDER = CASINO_FOLDER
+_G._GOODFARM_STATE_FILE = GOODFARM_STATE_FILE
 _G._AUTH_FILE = AUTH_FILE
 _G._CONFIG_FILE = CONFIG_FILE
 _G._MAP_CONFIG_FILE = MAP_CONFIG_FILE
@@ -69,6 +71,19 @@ _G.StoryFriendsOnly = false
 _G.StoryChapter = 1
 _G.StoryCurrentStage = 1
 _G.StoryCurrentDifficulty = "Normal"
+
+-- Good Farm (Auto All Farm)
+_G.AutoGoodFarm = false
+_G.GoodFarmCurrentMode = 1
+_G.GoodFarmRoundsDone = 0
+_G.GoodFarmQueue = {
+    { Mode = "Event",       Rounds = 0, MacroFile = "None" },
+    { Mode = "RaidMeguna",  Rounds = 0, MacroFile = "None" },
+    { Mode = "RaidGojo",    Rounds = 0, MacroFile = "None" },
+    { Mode = "InfiniteNew", Rounds = 0, MacroFile = "None" },
+    { Mode = "Casino",      Rounds = 0, MacroFile = "None" },
+    { Mode = "StoryHell15", Rounds = 0, MacroFile = "None" },
+}
 
 -- Story Tower Registration (4 slots)
 _G.StorySetupMode = nil  -- nil = off, "Damage1"/"Damage2"/"Farm1"/"Farm2" = waiting for tower place
@@ -230,7 +245,11 @@ local function SaveConfig()
             EventCardBlacklist = _G.EventCardBlacklist,
             SmartCardOrder = _G.SmartCardOrder,
             PrivateServerLink = _G.PrivateServerLink,
-            AutoRejoinPS = _G.AutoRejoinPS
+            AutoRejoinPS = _G.AutoRejoinPS,
+            AutoGoodFarm = _G.AutoGoodFarm,
+            GoodFarmQueue = _G.GoodFarmQueue,
+            GoodFarmCurrentMode = _G.GoodFarmCurrentMode,
+            GoodFarmRoundsDone = _G.GoodFarmRoundsDone
         }
         writefile(CONFIG_FILE, HttpService:JSONEncode(cfg))
     end)
@@ -272,6 +291,23 @@ local function LoadConfig()
             _G.SmartCardOrder = data.SmartCardOrder or "easy"
             _G.PrivateServerLink = data.PrivateServerLink or ""
             _G.AutoRejoinPS = data.AutoRejoinPS or false
+            _G.AutoGoodFarm = data.AutoGoodFarm or false
+            _G.GoodFarmRoundsDone = data.GoodFarmRoundsDone or 0
+            if data.GoodFarmQueue then
+                _G.GoodFarmQueue = data.GoodFarmQueue
+                -- เช็ค mode ที่ขาดแล้วเติมให้อัตโนมัติ (กรณี config เก่าไม่มี mode ใหม่)
+                local defaultModes = {"Event","RaidMeguna","RaidGojo","InfiniteNew","Casino","StoryHell15"}
+                for _, modeName in ipairs(defaultModes) do
+                    local found = false
+                    for _, q in ipairs(_G.GoodFarmQueue) do
+                        if q.Mode == modeName then found = true; break end
+                    end
+                    if not found then
+                        table.insert(_G.GoodFarmQueue, { Mode = modeName, Rounds = 0, MacroFile = "None" })
+                    end
+                end
+            end
+            _G.GoodFarmCurrentMode = data.GoodFarmCurrentMode or 1
         end
     end)
 end

@@ -168,7 +168,17 @@ local function RunMacroLogic()
                                                 local remote = RS:FindFirstChild("Remotes")
                                                 if remote then
                                                     local skillRemote = remote:FindFirstChild(skill.SkillName)
+                                                    
+                                                    -- Support for KingOfCursesEvo nested remotes (Ritual, DomainActive)
+                                                    if not skillRemote and remote:FindFirstChild("Towers") then
+                                                        local twrsFolder = remote:FindFirstChild("Towers")
+                                                        if twrsFolder:FindFirstChild("KingOfCursesEvo") then
+                                                            skillRemote = twrsFolder.KingOfCursesEvo:FindFirstChild(skill.SkillName)
+                                                        end
+                                                    end
+
                                                     if skillRemote then
+                                                        -- FireServer arguments: Both Gojo and Meguna expect the tower instance
                                                         skillRemote:FireServer(towerObj)
                                                         executedSkills[idx] = true
                                                         print("🎯 Skill fired: " .. skill.SkillName .. " on " .. skill.TowerName .. " | Wave " .. currentWave .. " T+" .. math.floor(waveElapsed) .. "s")

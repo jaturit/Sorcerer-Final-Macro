@@ -14,16 +14,16 @@ local SaveConfig = _G.SaveConfig
 
 -- Door Sequence Tracker
 local CasinoDoorSequence = {} -- { [sequence_order] = door_number }
-local CasinoDoorTrackerRunning = false
+local CasinoDoorTrackerThreadID = 0
 
 local function StartCasinoDoorTracker()
-    if CasinoDoorTrackerRunning then return end
-    CasinoDoorTrackerRunning = true
+    CasinoDoorTrackerThreadID = CasinoDoorTrackerThreadID + 1
+    local currentThread = CasinoDoorTrackerThreadID
     CasinoDoorSequence = {}
     task.spawn(function()
         local doorStates = {}
         for i = 1, 8 do doorStates[i] = false end
-        while CasinoDoorTrackerRunning do
+        while CasinoDoorTrackerThreadID == currentThread do
             pcall(function()
                 local paths = workspace.Map.Hakari.Paths
                 for i = 1, 8 do
@@ -44,7 +44,7 @@ local function StartCasinoDoorTracker()
 end
 
 local function StopCasinoDoorTracker()
-    CasinoDoorTrackerRunning = false
+    CasinoDoorTrackerThreadID = CasinoDoorTrackerThreadID + 1
 end
 
 local function GetDoorBySequence(seq)
@@ -151,11 +151,12 @@ local CasinoPlacedTowers = {}
 local CasinoSelectedFile = "None" -- จะ sync กับ _G.CasinoSelectedFile หลัง LoadConfig
 
 local function SaveCasinoMacro()
-    if CasinoSelectedFile == "None" or CasinoSelectedFile == "" then return end
+    local fileToSave = _G.CasinoSelectedFile or CasinoSelectedFile
+    if fileToSave == "None" or fileToSave == "" then return end
     pcall(function()
-        writefile(CASINO_FOLDER.."/"..CasinoSelectedFile..".json", HttpService:JSONEncode(CasinoCurrentData))
+        writefile(CASINO_FOLDER.."/"..fileToSave..".json", HttpService:JSONEncode(CasinoCurrentData))
     end)
-    print("💾 Casino Macro saved: "..CasinoSelectedFile.." | Actions: "..#CasinoCurrentData)
+    print("💾 Casino Macro saved: "..fileToSave.." | Actions: "..#CasinoCurrentData)
 end
 
 local function LoadCasinoMacro(fileName)
@@ -168,11 +169,12 @@ local function LoadCasinoMacro(fileName)
 end
 
 local function RunCasinoMacroLogic()
-    if CasinoSelectedFile == "None" then
+    local activeFile = _G.CasinoSelectedFile or CasinoSelectedFile
+    if activeFile == "None" then
         print("❌ ยังไม่ได้เลือกไฟล์ Casino Macro")
         return
     end
-    local data = LoadCasinoMacro(CasinoSelectedFile)
+    local data = LoadCasinoMacro(activeFile)
     if not data or #data == 0 then
         print("❌ ไฟล์ Casino Macro ว่างหรือโหลดไม่ได้")
         return
@@ -204,10 +206,15 @@ local function RunCasinoMacroLogic()
 
         if act.Type == "Spawn" then
             -- รอเงินพอก่อน (NO SKIP - รอจนกว่าจะพอ)
+            local _waitSpwnTick = 0
             while _G.AutoCasinoPlay do
                 local money = 0
                 pcall(function() money = Player.leaderstats.Money.Value end)
                 if money >= (act.Price or 0) then break end
+                if _waitSpwnTick % 10 == 0 then
+                    print("⏳ รอเงินเพื่อนวางตัว: " .. (act.TowerID or "Unknown") .. " | มีเงิน: " .. money .. " | ขาด: " .. ((act.Price or 0) - money))
+                end
+                _waitSpwnTick = _waitSpwnTick + 1
                 task.wait(0.5)
             end
             if not _G.AutoCasinoPlay then break end
@@ -358,7 +365,7 @@ local function RunCasinoMacroLogic()
                             pcall(function()
                                 countAfter = #workspace.Towers:GetChildren()
                             end)
-                        until countAfter > countBefore or waited2 >= 2
+                        until countAfter > countBefore or waited2 >= 5
 
                         if countAfter > countBefore then
                             GameTowers[idx] = result
@@ -403,13 +410,29 @@ local function RunCasinoMacroLogic()
             if GameTowers[act.Index] then
                 -- รอเงินพอก่อน
                 local neededMoney = (act.Price or 0) + 50
+                local _waitUpTick = 0
+                local _upgradeSkipped = false
                 while _G.AutoCasinoPlay do
                     local money = 0
                     pcall(function() money = Player.leaderstats.Money.Value end)
                     if money >= neededMoney then break end
+                    if _waitUpTick % 10 == 0 then
+                        print("⏳ รอเงินอัปเกรด idx:" .. act.Index .. " | มีเงิน: " .. money .. " | ต้องมี: " .. neededMoney)
+                    end
+                    -- ถ้ารอเงินนานเกิน 120 วิ (อาจเป็นราคาอัดผิดคิด) ให้ข้ามไปเลย ไม่บล็อคคิว Defense
+                    if _waitUpTick >= 240 then
+                        print("⚠️ อัปเกรด idx:" .. act.Index .. " รอเงินนานเกินไป (120วิ) ข้ามคิวนี้ไปก่อน")
+                        _upgradeSkipped = true
+                        break
+                    end
+                    _waitUpTick = _waitUpTick + 1
                     task.wait(0.5)
                 end
                 if not _G.AutoCasinoPlay then break end
+                if _upgradeSkipped then
+                    -- ข้ามไปเลย ให้คิว Defense ทำงานต่อ
+                    task.wait(0.2)
+                else
                 -- retry upgrade ไม่จำกัด จนกว่าจะสำเร็จ (NO SKIP)
                 local upgradeSuccess = false
                 while _G.AutoCasinoPlay and not upgradeSuccess do
@@ -436,7 +459,7 @@ local function RunCasinoMacroLogic()
                         elseif result then
                             local waited = 0
                             repeat task.wait(0.05) waited = waited + 0.05
-                            until Player.leaderstats.Money.Value ~= moneyBefore or waited >= 2
+                            until Player.leaderstats.Money.Value ~= moneyBefore or waited >= 5
                             if Player.leaderstats.Money.Value < moneyBefore then
                                 GameTowers[act.Index] = result
                                 upgradeSuccess = true
@@ -470,6 +493,7 @@ local function RunCasinoMacroLogic()
                             end
                         end
                     end
+                end
                 end
             else
                 print("⚠️ Upgrade: ไม่มี tower idx:"..tostring(act.Index).." (ข้ามไป)")

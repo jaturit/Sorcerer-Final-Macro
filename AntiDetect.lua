@@ -68,14 +68,22 @@ pcall(function()
         old = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
 
-            -- 🚀 Early return: ถ้าไม่ใช่ InvokeServer → ออกทันที (ไม่ต้อง unpack args)
-            if method ~= "InvokeServer" then
+            -- 🚀 Early return: เราสนใจเฉพาะ InvokeServer และ FireServer บางตัว
+            if method ~= "InvokeServer" and method ~= "FireServer" then
                 return old(self, ...)
             end
 
             -- 🚀 Early return: ถ้าไม่ใช่ remote ที่เราสนใจ → ออกทันที
             local remoteName = self.Name
-            if remoteName ~= "SpawnNewTower" and remoteName ~= "UpgradeTower" and remoteName ~= "SellTower" and remoteName ~= "GojoDomain" then
+            local allowedRemotes = {
+                SpawnNewTower = true,
+                UpgradeTower = true,
+                SellTower = true,
+                GojoDomain = true,
+                Ritual = true,
+                DomainActive = true
+            }
+            if not allowedRemotes[remoteName] then
                 return old(self, ...)
             end
 
@@ -385,8 +393,8 @@ pcall(function()
                     end
                 end
             end
-            -- Record GojoDomain (skill activation)
-            if IsRecording and self.Name == "GojoDomain" then
+            -- Record Skills (GojoDomain, Ritual, DomainActive)
+            if IsRecording and (self.Name == "GojoDomain" or self.Name == "Ritual" or self.Name == "DomainActive") then
                 pcall(function()
                     local towerObj = args[1]
                     local towerName = typeof(towerObj) == "Instance" and towerObj.Name or tostring(towerObj)
@@ -401,12 +409,12 @@ pcall(function()
                     end
                     table.insert(CurrentData, {
                         Type = "Skill",
-                        SkillName = "GojoDomain",
+                        SkillName = self.Name,
                         TowerName = towerName,
                         Wave = waveNum,
                         TimeInWave = timeInWave,
                     })
-                    print("✅ Recorded Skill | GojoDomain → " .. towerName .. " | Wave " .. waveNum .. " | T+" .. timeInWave .. "s")
+                    print("✅ Recorded Skill | " .. self.Name .. " → " .. towerName .. " | Wave " .. waveNum .. " | T+" .. timeInWave .. "s")
                 end)
             end
             return old(self, ...)

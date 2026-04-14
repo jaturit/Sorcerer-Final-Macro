@@ -749,6 +749,298 @@ local function LoadMainUI()
     local Page7 = createPage("SHOP")
     local Page8 = createPage("EVENT")
     local Page3 = createPage("DISCORD")
+    local Page9 = createPage("GOOD FARM")
+
+    -- ═══════════════════════════════════════════════════════
+    -- PAGE 9: GOOD FARM (Auto All Farm Queue System)
+    -- ═══════════════════════════════════════════════════════
+    do
+        local h9 = Instance.new("TextLabel", Page9)
+        h9.Text = "🌾 GOOD FARM"
+        h9.Size = UDim2.new(1, -20, 0, 30)
+        h9.BackgroundTransparency = 1
+        h9.TextColor3 = Colors.NeonRed
+        h9.Font = Enum.Font.GothamBold
+        h9.TextSize = 15
+        h9.TextXAlignment = Enum.TextXAlignment.Left
+        h9.ZIndex = 4
+
+        local GoodFarmBox = createContainer(Page9, 620)
+
+        -- Master Toggle
+        createToggle(GoodFarmBox, "🌾 Auto All Farm", _G.AutoGoodFarm, function(v)
+            _G.AutoGoodFarm = v
+            if not v then
+                _G.GoodFarmRoundsDone = 0
+                _G.GoodFarmCurrentMode = 1
+                if _G.SaveGoodFarmState then _G.SaveGoodFarmState() end
+            end
+            SaveConfig()
+        end)
+
+        -- Reset Button
+        createButton(GoodFarmBox, "🔄 Reset รอบเป็น 0 และเริ่มใหม่", "ล้างจำนวนรอบปัจจุบันให้เริ่มนับใหม่ตั้งแต่คิวแรก", function()
+            _G.GoodFarmRoundsDone = 0
+            _G.GoodFarmCurrentMode = 1
+            SaveConfig()
+            if _G.SaveGoodFarmState then _G.SaveGoodFarmState() end
+            if _G._GoodFarmStatusLabel then
+                _G._GoodFarmStatusLabel.Text = "🔄 รีเซ็ตคิวทั้งหมด เริ่มนับใหม่แล้ว!"
+            end
+            print("✅ รีเซ็ตจำนวนรอบ Good Farm แล้ว")
+        end)
+
+        -- Status Label
+        local gfStatus = Instance.new("TextLabel", GoodFarmBox)
+        gfStatus.Name = "GoodFarmStatus"
+        gfStatus.Text = "⏸️ สแตนด์บาย"
+        gfStatus.Size = UDim2.new(1, -25, 0, 25)
+        gfStatus.BackgroundTransparency = 1
+        gfStatus.TextColor3 = Colors.Yellow
+        gfStatus.Font = Enum.Font.GothamMedium
+        gfStatus.TextSize = 12
+        gfStatus.ZIndex = 5
+        _G._GoodFarmStatusLabel = gfStatus
+
+        -- Separator
+        local sep = Instance.new("Frame", GoodFarmBox)
+        sep.Size = UDim2.new(1, -30, 0, 1)
+        sep.BackgroundColor3 = Colors.DarkRed
+        sep.ZIndex = 5
+
+        -- Mode Labels
+        local ModeNames = {
+            { key = "Event",       label = "🎪 Event Mode" },
+            { key = "InfiniteNew", label = "🌀 Infinite New" },
+            { key = "Casino",      label = "🎰 Casino" },
+        }
+
+        -- Helper: find queue entry by mode key
+        local function findQueueEntry(modeKey)
+            for _, q in ipairs(_G.GoodFarmQueue) do
+                if q.Mode == modeKey then return q end
+            end
+            return nil
+        end
+
+        -- Helper: list macro files from FOLDER (copied filter from existing file selector)
+        local function listMacroFiles()
+            local files = {}
+            pcall(function()
+                for _, file in pairs(listfiles(FOLDER)) do
+                    if file:sub(-5) == ".json" then
+                        local fileName = file:lower()
+                        local isSystemFile = fileName:find("user_auth")
+                            or fileName:find("settings")
+                            or fileName:find("std_auth")
+                            or fileName:find("auth")
+                            or fileName:find("config")
+                            or fileName:find("_backup")
+                            or fileName:find("map_macros")
+                            or fileName:find("story_towers")
+                            or fileName:find("card_blacklist")
+                            or fileName:find("dashboard_cache")
+                            or fileName:find("event_colony")
+                        if not isSystemFile then
+                            local n = file:match("[^/\\]+$") or file
+                            n = n:gsub("%.json$", "")
+                            if n:sub(1,1) ~= "_" and n:sub(1,1) ~= "." then
+                                table.insert(files, n)
+                            end
+                        end
+                    end
+                end
+            end)
+            table.sort(files)
+            return files
+        end
+
+        for _, modeInfo in ipairs(ModeNames) do
+            local entry = findQueueEntry(modeInfo.key)
+            if not entry then continue end
+
+            -- Mode Row Container
+            local isEventMode = (modeInfo.key == "Event")
+            local isCasinoMode = (modeInfo.key == "Casino")
+            local isSpecialMode = isEventMode or isCasinoMode
+
+            local row = Instance.new("Frame", GoodFarmBox)
+            row.Size = UDim2.new(1, -25, 0, isSpecialMode and 55 or 80)
+            row.BackgroundColor3 = Colors.DarkGray
+            row.ZIndex = 5
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+            local rowStroke = Instance.new("UIStroke", row)
+            rowStroke.Color = entry.Rounds > 0 and Colors.Green or Color3.fromRGB(60, 60, 60)
+            rowStroke.Thickness = 1
+
+            -- Mode Label
+            local modeLbl = Instance.new("TextLabel", row)
+            modeLbl.Text = modeInfo.label
+            modeLbl.Size = UDim2.new(0.55, 0, 0, 30)
+            modeLbl.Position = UDim2.new(0, 10, 0, 5)
+            modeLbl.BackgroundTransparency = 1
+            modeLbl.TextColor3 = Colors.White
+            modeLbl.Font = Enum.Font.GothamBold
+            modeLbl.TextSize = 13
+            modeLbl.TextXAlignment = Enum.TextXAlignment.Left
+            modeLbl.ZIndex = 6
+
+            -- Rounds Input
+            local roundsBox = Instance.new("TextBox", row)
+            roundsBox.Size = UDim2.new(0, 50, 0, 26)
+            roundsBox.Position = UDim2.new(1, -65, 0, 5)
+            roundsBox.BackgroundColor3 = Colors.MediumGray
+            roundsBox.TextColor3 = Colors.White
+            roundsBox.Text = tostring(entry.Rounds)
+            roundsBox.Font = Enum.Font.GothamBold
+            roundsBox.TextSize = 14
+            roundsBox.ZIndex = 6
+            Instance.new("UICorner", roundsBox).CornerRadius = UDim.new(0, 6)
+            local rbStroke = Instance.new("UIStroke", roundsBox)
+            rbStroke.Color = Colors.DarkRed
+            rbStroke.Thickness = 1
+
+            local roundsLbl = Instance.new("TextLabel", row)
+            roundsLbl.Text = "รอบ"
+            roundsLbl.Size = UDim2.new(0, 30, 0, 26)
+            roundsLbl.Position = UDim2.new(1, -110, 0, 5)
+            roundsLbl.BackgroundTransparency = 1
+            roundsLbl.TextColor3 = Colors.LightGray
+            roundsLbl.Font = Enum.Font.Gotham
+            roundsLbl.TextSize = 11
+            roundsLbl.ZIndex = 6
+
+            roundsBox.FocusLost:Connect(function()
+                local num = tonumber(roundsBox.Text) or 0
+                if num < 0 then num = 0 end
+                entry.Rounds = num
+                roundsBox.Text = tostring(num)
+                rowStroke.Color = num > 0 and Colors.Green or Color3.fromRGB(60, 60, 60)
+                SaveConfig()
+            end)
+
+            -- Event/Casino: แสดงข้อความแทน dropdown
+            if isSpecialMode then
+                local noteLbl = Instance.new("TextLabel", row)
+                noteLbl.Text = isEventMode and "⚙️ ใช้การตั้งค่าจากหน้า Event" or "⚙️ ใช้การตั้งค่าจากหน้า Casino"
+                noteLbl.Size = UDim2.new(1, -20, 0, 18)
+                noteLbl.Position = UDim2.new(0, 10, 0, 34)
+                noteLbl.BackgroundTransparency = 1
+                noteLbl.TextColor3 = Colors.LightGray
+                noteLbl.Font = Enum.Font.Gotham
+                noteLbl.TextSize = 10
+                noteLbl.TextXAlignment = Enum.TextXAlignment.Left
+                noteLbl.ZIndex = 6
+                continue -- ข้าม dropdown ไปเลย
+            end
+
+            -- Macro Dropdown
+            local macroBtn = Instance.new("TextButton", row)
+            macroBtn.Size = UDim2.new(1, -20, 0, 28)
+            macroBtn.Position = UDim2.new(0, 10, 0, 40)
+            macroBtn.BackgroundColor3 = Colors.MediumGray
+            macroBtn.Text = "📁 " .. (entry.MacroFile ~= "None" and entry.MacroFile or "-- เลือก Macro --")
+            macroBtn.TextColor3 = entry.MacroFile ~= "None" and Colors.Green or Colors.LightGray
+            macroBtn.Font = Enum.Font.GothamMedium
+            macroBtn.TextSize = 11
+            macroBtn.TextXAlignment = Enum.TextXAlignment.Left
+            macroBtn.ZIndex = 6
+            Instance.new("UICorner", macroBtn).CornerRadius = UDim.new(0, 6)
+
+            -- Dropdown for macro files
+            local macroDropdown = Instance.new("ScrollingFrame")
+            macroDropdown.Name = "GF_Drop_" .. modeInfo.key
+            macroDropdown.Size = UDim2.new(0, 200, 0, 0)
+            macroDropdown.BackgroundColor3 = Colors.DarkGray
+            macroDropdown.Visible = false
+            macroDropdown.ZIndex = 120
+            macroDropdown.ScrollBarThickness = 3
+            macroDropdown.ScrollBarImageColor3 = Colors.NeonRed
+            macroDropdown.BorderSizePixel = 0
+            macroDropdown.Parent = ScreenGui
+            Instance.new("UICorner", macroDropdown).CornerRadius = UDim.new(0, 6)
+            local mdStroke = Instance.new("UIStroke", macroDropdown)
+            mdStroke.Color = Colors.NeonRed
+            mdStroke.Thickness = 1.5
+            local mdLayout = Instance.new("UIListLayout", macroDropdown)
+            mdLayout.SortOrder = Enum.SortOrder.Name
+
+            macroBtn.MouseButton1Click:Connect(function()
+                -- Refresh items
+                for _, v in pairs(macroDropdown:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+                local files = listMacroFiles()
+                -- Add None option
+                table.insert(files, 1, "None")
+                for _, fname in ipairs(files) do
+                    local item = Instance.new("TextButton", macroDropdown)
+                    item.Size = UDim2.new(1, 0, 0, 28)
+                    item.BackgroundColor3 = Colors.DarkGray
+                    item.Text = "  " .. fname
+                    item.TextColor3 = fname == entry.MacroFile and Colors.Green or Colors.White
+                    item.Font = Enum.Font.Gotham
+                    item.TextSize = 11
+                    item.TextXAlignment = Enum.TextXAlignment.Left
+                    item.ZIndex = 121
+                    item.MouseButton1Click:Connect(function()
+                        entry.MacroFile = fname
+                        macroBtn.Text = "📁 " .. (fname ~= "None" and fname or "-- เลือก Macro --")
+                        macroBtn.TextColor3 = fname ~= "None" and Colors.Green or Colors.LightGray
+                        macroDropdown.Visible = false
+                        SaveConfig()
+                    end)
+                end
+                -- Position
+                local absPos = macroBtn.AbsolutePosition
+                local absSize = macroBtn.AbsoluteSize
+                macroDropdown.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 2)
+                macroDropdown.Size = UDim2.new(0, absSize.X, 0, math.min(#files * 28, 200))
+                macroDropdown.CanvasSize = UDim2.new(0, 0, 0, #files * 28)
+                macroDropdown.Visible = not macroDropdown.Visible
+            end)
+
+            -- Close dropdown on outside click
+            UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    task.wait(0.1)
+                    if macroDropdown.Visible then
+                        local mousePos = UserInputService:GetMouseLocation()
+                        local dPos = macroDropdown.AbsolutePosition
+                        local dSize = macroDropdown.AbsoluteSize
+                        local inDrop = mousePos.X >= dPos.X and mousePos.X <= dPos.X + dSize.X and mousePos.Y >= dPos.Y and mousePos.Y <= dPos.Y + dSize.Y
+                        local bPos = macroBtn.AbsolutePosition
+                        local bSize = macroBtn.AbsoluteSize
+                        local inBtn = mousePos.X >= bPos.X and mousePos.X <= bPos.X + bSize.X and mousePos.Y >= bPos.Y and mousePos.Y <= bPos.Y + bSize.Y
+                        if not inDrop and not inBtn then
+                            macroDropdown.Visible = false
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Live Status Updater
+        task.spawn(function()
+            while true do
+                pcall(function()
+                    if _G.AutoGoodFarm then
+                        local idx = _G.GoodFarmCurrentMode or 1
+                        local q = _G.GoodFarmQueue[idx]
+                        if q then
+                            local done = _G.GoodFarmRoundsDone or 0
+                            -- ถ้าอยู่ใน Lobby และยังไม่เริ่มนับ (Done เป็น 0) ให้โชว์ว่ากำลังจะเริ่มรอบ 1
+                            -- แต่ถ้า Automation รันแล้ว Done จะถูกบวก 1 ทันที ทำให้โชว์ 1/X
+                            gfStatus.Text = "▶️ [" .. q.Mode .. "] รอบ " .. done .. "/" .. q.Rounds
+                            gfStatus.TextColor3 = Colors.Green
+                        end
+                    else
+                        gfStatus.Text = "⏸️ สแตนด์บาย"
+                        gfStatus.TextColor3 = Colors.Yellow
+                    end
+                end)
+                task.wait(2)
+            end
+        end)
+    end
 
     -- PAGE 1: DASHBOARD
     local h1 = Instance.new("TextLabel", Page1)
@@ -882,7 +1174,7 @@ local function LoadMainUI()
 
     local MainBox = createContainer(Page1, 550)
 
-    createToggle(MainBox, "▶️ Auto Play Macro", _G.AutoPlay, function(v)
+    _G.SetDashboardAutoPlay = createToggle(MainBox, "▶️ Auto Play Macro", _G.AutoPlay, function(v)
         _G._IsEventAutoPlay = false
         _G.AutoPlay = v
         if not v then
@@ -1688,7 +1980,12 @@ local function LoadMainUI()
     local _CapturedTraitUUID = nil
     task.spawn(function()
         pcall(function()
-            local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Traits"):WaitForChild("RollTrait")
+            local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 5)
+            local remote = nil
+            if remotes and remotes:FindFirstChild("Traits") then
+                remote = remotes.Traits:FindFirstChild("RollTrait")
+            end
+            if not remote then return end
             local mt = getrawmetatable(remote)
             if mt then
                 local oldNamecall = mt.__namecall
@@ -2299,7 +2596,7 @@ local function LoadMainUI()
                     pcall(function() unequipRemote:FireServer(deckUUID) end)
                     unequipCount = unequipCount + 1
                     print("🔧 Unequip: " .. deckUUID:sub(1,12) .. "...")
-                    task.wait(0.3)
+                    task.wait(0.6)
                 end
             end
             
@@ -2309,7 +2606,7 @@ local function LoadMainUI()
                 pcall(function() equipRemote:FireServer(uuid) end)
                 equipCount = equipCount + 1
                 print("✅ Equip: " .. uuid:sub(1,12) .. "...")
-                task.wait(0.3)
+                task.wait(0.6)
             end
             
             towerCheckLbl.Text = "✅ Equip เสร็จ! (" .. equipCount .. " ตัว, ถอด " .. unequipCount .. " ตัว)"
@@ -2412,19 +2709,19 @@ local function LoadMainUI()
     eventStatus.TextWrapped = true
     eventStatus.ZIndex = 5
 
-    createToggle(EventCtrlBox, "🎪 Auto Event", _G.AutoEvent, function(v)
+    _G.SetEventToggle = createToggle(EventCtrlBox, "🎪 Auto Event", _G.AutoEvent, function(v)
         _G.AutoEvent = v
         SaveConfig()
     end)
 
     _G.AutoEventMacro = _G.AutoEventMacro or false
-    createToggle(EventCtrlBox, "▶️ Auto Play Event Macro", _G.AutoEventMacro, function(v)
+    _G.SetEventMacroToggle = createToggle(EventCtrlBox, "▶️ Auto Play Event Macro", _G.AutoEventMacro, function(v)
         _G.AutoEventMacro = v
         SaveConfig()
     end)
 
     _G.AutoEventEquip = _G.AutoEventEquip or false
-    createToggle(EventCtrlBox, "🔧 Auto Equip Event", _G.AutoEventEquip, function(v)
+    _G.SetEventEquipToggle = createToggle(EventCtrlBox, "🔧 Auto Equip Event", _G.AutoEventEquip, function(v)
         _G.AutoEventEquip = v
         SaveConfig()
     end)
@@ -2779,6 +3076,19 @@ local function LoadMainUI()
                 continue
             end
 
+            -- 🛡️ [GoodFarm Safeguard] ตรวจสอบว่าครบรอบหรือยัง ถ้าครบแล้วห้าม Join ต่อ
+            if _G.AutoGoodFarm then
+                local idx = _G.GoodFarmCurrentMode or 1
+                local q = (_G.GoodFarmQueue or {})[idx]
+                if q and q.Mode == "Event" and q.Rounds > 0 and (_G.GoodFarmRoundsDone or 0) >= q.Rounds then
+                    _G.AutoEvent = false
+                    _G.AutoEventMacro = false
+                    _G.AutoEventEquip = false
+                    task.wait(0.5)
+                    continue
+                end
+            end
+
             -- เช็คว่าตัวละครยังอยู่ไหม
             local char = Player.Character
             local rootPart = char and char:FindFirstChild("HumanoidRootPart")
@@ -3023,10 +3333,10 @@ local function LoadMainUI()
                                         pcall(function() unequipRemote:FireServer(deckUUID) end)
                                         unequipCount = unequipCount + 1
                                         print("🔧 [Event] Unequip: " .. deckUUID)
-                                        task.wait(0.3)
+                                        task.wait(0.6)
                                     end
 
-                                    if unequipCount > 0 then task.wait(1) end
+                                     if unequipCount > 0 then task.wait(1.5) end
 
                                     -- Step 2: Equip ตัวที่ต้องการ
                                     local equipCount = 0
@@ -3034,7 +3344,7 @@ local function LoadMainUI()
                                         pcall(function() equipRemote:FireServer(uuid) end)
                                         equipCount = equipCount + 1
                                         print("✅ [Event] Equip: " .. uuid)
-                                        task.wait(0.3)
+                                        task.wait(0.6)
                                     end
 
                                     eventStatus.Text = "🔧 Equip เสร็จ! (" .. equipCount .. " ตัว, ถอด " .. unequipCount .. " ตัว)"
@@ -3250,6 +3560,16 @@ local function LoadMainUI()
             repeat task.wait(1) waitGame = waitGame + 1 until Player:FindFirstChild("leaderstats") or waitGame >= 30
             -- Loop รันซ้ำตราบใดที่ AutoCasinoEnabled ยังเปิด
             while _G.AutoCasinoEnabled do
+                -- 🛡️ [GoodFarm Safeguard] ตรวจสอบว่าครบรอบหรือยัง
+                if _G.AutoGoodFarm then
+                    local idx = _G.GoodFarmCurrentMode or 1
+                    local q = (_G.GoodFarmQueue or {})[idx]
+                    if q and q.Mode == "Casino" and q.Rounds > 0 and (_G.GoodFarmRoundsDone or 0) >= q.Rounds then
+                        _G.AutoCasinoEnabled = false
+                        _G.AutoCasinoPlay = false
+                        break
+                    end
+                end
                 local f = _G.CasinoSelectedFile or CasinoSelectedFile
                 if f == "None" or f == "" then break end
                 _G.AutoCasinoPlay = true
@@ -3270,41 +3590,61 @@ local function LoadMainUI()
         end
     end)
 
-    local setCasinoPlayToggle = createToggle(CasinoPlayBox, "▶️ Auto Play Casino Macro", _G.AutoCasinoEnabled, function(v)
+    local setCasinoPlayToggle
+    local function startCasinoLoop()
+        if CasinoSelectedFile == "None" then
+            casinoPlayStatus.Text = "❌ เลือกไฟล์ก่อน"
+            _G.AutoCasinoEnabled = false
+            _G.AutoCasinoPlay = false
+            SaveConfig()
+            if setCasinoPlayToggle then setCasinoPlayToggle(false) end
+            return
+        end
+        task.spawn(function()
+            while _G.AutoCasinoEnabled do
+                -- 🛡️ [GoodFarm Safeguard] ตรวจสอบว่าครบรอบหรือยัง
+                if _G.AutoGoodFarm then
+                    local idx = _G.GoodFarmCurrentMode or 1
+                    local q = (_G.GoodFarmQueue or {})[idx]
+                    if q and q.Mode == "Casino" and q.Rounds > 0 and (_G.GoodFarmRoundsDone or 0) >= q.Rounds then
+                        _G.AutoCasinoEnabled = false
+                        _G.AutoCasinoPlay = false
+                        break
+                    end
+                end
+                local f = _G.CasinoSelectedFile or CasinoSelectedFile
+                if f == "None" or f == "" then break end
+                _G.AutoCasinoPlay = true
+                casinoPlayStatus.Text = "▶️ กำลังเล่น: " .. f
+                RunCasinoMacroLogic()
+                _G.AutoCasinoPlay = false
+                if _G.AutoCasinoEnabled then
+                    casinoPlayStatus.Text = "🔄 จบรอบ รอรอบถัดไป..."
+                    task.wait(5)
+                else
+                    casinoPlayStatus.Text = "✅ จบแล้ว"
+                    if setCasinoPlayToggle then setCasinoPlayToggle(false) end
+                end
+            end
+        end)
+    end
+
+    setCasinoPlayToggle = createToggle(CasinoPlayBox, "▶️ Auto Play Casino Macro", _G.AutoCasinoEnabled, function(v)
         _G.AutoCasinoEnabled = v
         _G.AutoCasinoPlay = v
         SaveConfig()
         if v then
-            if CasinoSelectedFile == "None" then
-                casinoPlayStatus.Text = "❌ เลือกไฟล์ก่อน"
-                _G.AutoCasinoEnabled = false
-                _G.AutoCasinoPlay = false
-                SaveConfig()
-                return
-            end
-            task.spawn(function()
-                while _G.AutoCasinoEnabled do
-                    local f = _G.CasinoSelectedFile or CasinoSelectedFile
-                    if f == "None" or f == "" then break end
-                    _G.AutoCasinoPlay = true
-                    casinoPlayStatus.Text = "▶️ กำลังเล่น: " .. f
-                    RunCasinoMacroLogic()
-                    _G.AutoCasinoPlay = false
-                    if _G.AutoCasinoEnabled then
-                        casinoPlayStatus.Text = "🔄 จบรอบ รอรอบถัดไป..."
-                        task.wait(5)
-                    else
-                        casinoPlayStatus.Text = "✅ จบแล้ว"
-                        if setCasinoPlayToggle then setCasinoPlayToggle(false) end
-                    end
-                end
-            end)
+            startCasinoLoop()
         else
             _G.AutoCasinoPlay = false
             SaveConfig()
             casinoPlayStatus.Text = "⏹️ หยุดแล้ว"
         end
     end)
+    
+    if _G.AutoCasinoEnabled then
+        startCasinoLoop()
+    end
 
     -- 2. RECORD CASINO MACRO
     local CasinoRecBox = createContainer(Page5, 210)
@@ -4108,6 +4448,7 @@ local function LoadMainUI()
 
     -- Create Tabs
     createTab("📊 Dashboard", Page1)
+    createTab("🌾 Good Farm", Page9)
     createTab("⚙️ Main", Page4)
     createTab("🤖 Macro", Page2)
     createTab("🃏 Casino", Page5)
