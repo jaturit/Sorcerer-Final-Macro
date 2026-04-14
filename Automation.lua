@@ -821,8 +821,10 @@ task.spawn(function()
             _G.AutoToLobby = true
             _G.AutoReplay = false -- ปิด Replay เพื่อให้ AutoToLobby จัดการแทน
 
-            -- [5] Join ด่านตาม Mode
-            GF_Status("🚀 [" .. mode .. "] กำลังเข้าด่าน...")
+            -- [5] Join ด่านตาม Mode — นับรอบก่อน + save ทันที (ก่อนสคริปตายตอนย้าย map)
+            _G.GoodFarmRoundsDone = (_G.GoodFarmRoundsDone or 0) + 1
+            SaveGoodFarmState()
+            GF_Status("🚀 [" .. mode .. "] เข้าด่าน รอบ " .. _G.GoodFarmRoundsDone .. "/" .. current.Rounds)
 
             if mode == "Casino" then
                 -- Copy จาก AutoJoinCasino
@@ -933,9 +935,7 @@ task.spawn(function()
             if not _G.AutoGoodFarm then return end
 
             if not GF_IsInLobby() then
-                -- เข้าด่านสำเร็จ → นับรอบตอนนี้ (ไม่นับก่อนเข้า)
-                _G.GoodFarmRoundsDone = (_G.GoodFarmRoundsDone or 0) + 1
-                SaveGoodFarmState()
+                -- เข้าด่านสำเร็จ (นับรอบไปแล้วก่อนหน้า)
                 GF_Status("✅ [" .. mode .. "] เข้าด่านสำเร็จ! รอบ " .. _G.GoodFarmRoundsDone .. "/" .. current.Rounds)
                 _G.SaveConfig()
 
@@ -974,7 +974,10 @@ task.spawn(function()
                     end
                 end
             else
-                GF_Status("❌ เข้าด่านไม่สำเร็จ รอเริ่มใหม่...")
+                -- เข้าด่านไม่สำเร็จ → ลบรอบที่นับไปออก
+                _G.GoodFarmRoundsDone = math.max(0, (_G.GoodFarmRoundsDone or 1) - 1)
+                SaveGoodFarmState()
+                GF_Status("❌ เข้าด่านไม่สำเร็จ (ลบรอบที่นับ) รอเริ่มใหม่...")
             end
 
             task.wait(3) -- รอจัดคิวรอบใหม่
