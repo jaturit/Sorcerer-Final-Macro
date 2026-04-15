@@ -259,7 +259,13 @@ task.spawn(function()
                     if _G.AutoGoodFarm then
                         pcall(function()
                             _G.GoodFarmRoundsDone = (_G.GoodFarmRoundsDone or 0) + 1
-                            SaveGoodFarmState()
+                            -- save ตรงๆ (SaveGoodFarmState ประกาศทีหลัง เรียกตรงนี้ไม่ได้)
+                            local state = {
+                                CurrentIdx = _G.GoodFarmCurrentMode or 1,
+                                RoundsDone = _G.GoodFarmRoundsDone,
+                                LastQueueLength = #(_G.GoodFarmQueue or {})
+                            }
+                            writefile(_G._GOODFARM_STATE_FILE, game:GetService("HttpService"):JSONEncode(state))
                             print("🌾 [GoodFarm] จบด่าน! นับรอบ: " .. _G.GoodFarmRoundsDone)
                         end)
                     end
