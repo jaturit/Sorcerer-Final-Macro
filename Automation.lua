@@ -254,9 +254,18 @@ task.spawn(function()
                 local currentTime = tick()
                 if (currentTime - lastNotifyTime) > 15 then
                     lastNotifyTime = currentTime
+
+                    -- 🌾 GoodFarm: นับรอบตอนจบด่าน (ก่อน go to lobby / สคริปตาย)
+                    if _G.AutoGoodFarm then
+                        pcall(function()
+                            _G.GoodFarmRoundsDone = (_G.GoodFarmRoundsDone or 0) + 1
+                            SaveGoodFarmState()
+                            print("🌾 [GoodFarm] จบด่าน! นับรอบ: " .. _G.GoodFarmRoundsDone)
+                        end)
+                    end
+
                     task.wait(1)
                     SendGameEndNotification()
-                    -- ✅ ส่ง webhook เสร็จแล้ว → set flag ให้ Auto Lobby / Replay ทำงานได้
                     _G._WebhookSentForThisRound = true
                 end
             end
@@ -825,10 +834,8 @@ task.spawn(function()
             _G.AutoToLobby = true
             _G.AutoReplay = false -- ปิด Replay เพื่อให้ AutoToLobby จัดการแทน
 
-            -- [5] Join ด่านตาม Mode — นับรอบก่อน + save ทันที (ก่อนสคริปตายตอนย้าย map)
-            _G.GoodFarmRoundsDone = (_G.GoodFarmRoundsDone or 0) + 1
-            SaveGoodFarmState()
-            GF_Status("🚀 [" .. mode .. "] เข้าด่าน รอบ " .. _G.GoodFarmRoundsDone .. "/" .. current.Rounds)
+            -- [5] Join ด่านตาม Mode
+            GF_Status("🚀 [" .. mode .. "] กำลังเข้าด่าน...")
 
             if mode == "Casino" then
                 -- Copy จาก AutoJoinCasino
@@ -892,8 +899,6 @@ task.spawn(function()
                         end
                     end
                 else
-                    _G.GoodFarmRoundsDone = math.max(0, (_G.GoodFarmRoundsDone or 1) - 1)
-                    SaveGoodFarmState()
                     _G.AutoEvent = false; _G.AutoEventMacro = false; _G.AutoEventEquip = false
                     _G.SaveConfig()
                     GF_Status("❌ Event เข้าด่านไม่สำเร็จ")
@@ -992,10 +997,7 @@ task.spawn(function()
                     end
                 end
             else
-                -- เข้าด่านไม่สำเร็จ → ลบรอบที่นับไปออก
-                _G.GoodFarmRoundsDone = math.max(0, (_G.GoodFarmRoundsDone or 1) - 1)
-                SaveGoodFarmState()
-                GF_Status("❌ เข้าด่านไม่สำเร็จ (ลบรอบที่นับ) รอเริ่มใหม่...")
+                GF_Status("❌ เข้าด่านไม่สำเร็จ รอเริ่มใหม่...")
             end
 
             task.wait(3) -- รอจัดคิวรอบใหม่
