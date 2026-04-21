@@ -54,33 +54,62 @@ function KeySystem:ValidateKey(key)
     local hwid = ""
     pcall(function() hwid = game:GetService("RbxAnalyticsService"):GetClientId() end)
 
-    -- [[ ⏳ Unused Key: เจนล่วงหน้า → Activate ตอนใช้ครั้งแรก ]]
-    if keyData.Unused == true then
-        local d = keyData.Duration or 30
-        keys[key].Unused = nil
-        keys[key].Active = true
-        keys[key].ExpiresAt = os.time() + (d * 86400)
-        keys[key].ActivatedAt = os.time()
-        keys[key].hwid = hwid  -- ล็อค HWID ตอน activate
+    -- [[ 🔄 Migration: hwid (string เก่า) → hwids (array ใหม่) ]]
+    if keyData.hwid and type(keyData.hwid) == "string" and keyData.hwid ~= "" then
+        keys[key].hwids = {keyData.hwid}
+        keys[key].hwid = nil
+        if not keys[key].maxDevices then
+            keys[key].maxDevices = 1
+        end
         keyData = keys[key]
         task.spawn(function()
             self:UploadToGitHub(keys)
         end)
-        print("🔓 Key activated! Duration: " .. d .. " days | HWID locked")
+        print("🔄 Migrated key from hwid → hwids (array)")
     end
 
-    -- [[ 🔒 HWID Check ]]
-    if keyData.hwid and keyData.hwid ~= "" then
-        if hwid ~= keyData.hwid then
-            return false, "HWID ไม่ตรง! คีย์นี้ผูกกับเครื่องอื่น", 0
-        end
-    elseif keyData.Active then
-        -- key เก่าที่ยังไม่มี hwid → ล็อคเครื่องนี้
-        keys[key].hwid = hwid
+    -- [[ ⏳ Unused Key: เจนล่วงหน้า → Activate ตอนใช้ครั้งแรก ]]
+    if keyData.Unused == true then
+        local d = keyData.Duration or 30
+        local maxDev = keyData.maxDevices or 1
+        keys[key].Unused = nil
+        keys[key].Active = true
+        keys[key].ExpiresAt = os.time() + (d * 86400)
+        keys[key].ActivatedAt = os.time()
+        keys[key].hwids = {hwid}  -- ล็อค HWID เครื่องแรกตอน activate
+        keys[key].maxDevices = maxDev
+        keyData = keys[key]
         task.spawn(function()
             self:UploadToGitHub(keys)
         end)
-        print("🔒 HWID locked for existing key")
+        print("🔓 Key activated! Duration: " .. d .. " days | HWID locked (1/" .. maxDev .. " devices)")
+    end
+
+    -- [[ 🔒 Multi-HWID Check ]]
+    local hwids = keyData.hwids or {}
+    local maxDevices = keyData.maxDevices or 1
+
+    -- เช็คว่า HWID นี้อยู่ใน list หรือยัง
+    local found = false
+    for _, h in ipairs(hwids) do
+        if h == hwid then
+            found = true
+            break
+        end
+    end
+
+    if not found then
+        if #hwids >= maxDevices then
+            -- เต็มแล้ว! ใช้ไม่ได้
+            return false, "HWID เต็ม! (" .. #hwids .. "/" .. maxDevices .. " เครื่อง) คีย์นี้ใช้ครบจำนวนเครื่องแล้ว", 0
+        end
+        -- ยังมีที่ว่าง → เพิ่ม HWID ใหม่
+        table.insert(hwids, hwid)
+        keys[key].hwids = hwids
+        task.spawn(function()
+            self:UploadToGitHub(keys)
+        end)
+        print("🔒 HWID added! (" .. #hwids .. "/" .. maxDevices .. " devices)")
     end
 
     if not keyData.Active then return false, "Key is deactivated / คีย์ถูกระงับ", 0 end
