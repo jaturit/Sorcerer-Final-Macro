@@ -12,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
+local ContentProvider = game:GetService("ContentProvider")
 
 local Request = request or http_request or (syn and syn.request) or (http and http.request) or (fluxus and fluxus.request) or function() return nil end
 
@@ -42,6 +43,7 @@ _G._Services = {
     TweenService = TweenService,
     RunService = RunService,
     Lighting = Lighting,
+    ContentProvider = ContentProvider,
 }
 _G._Request = Request
 _G._Player = Player
@@ -78,6 +80,7 @@ _G.LowPerformanceFPS = 15
 _G.CyberpunkUI = true
 _G.UIBackgroundImage = "rbxassetid://90298702993965"
 _G.UIBackgroundTransparency = 0.52
+_G.LagSaverBackgroundImage = LAGSAVER_BACKGROUND_IMAGE
 
 -- Auto Story
 _G.AutoStory = false
@@ -291,6 +294,22 @@ local function DestroyScreenCover()
     end
 end
 
+local function NormalizeImageId(value)
+    value = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if value == "" or value == "0" then return "" end
+    if value:match("^%d+$") then
+        return "rbxassetid://" .. value
+    end
+    return value
+end
+
+local function GetAssetThumbnailId(value)
+    value = tostring(value or "")
+    local id = value:match("rbxassetid://(%d+)") or value:match("id=(%d+)") or value:match("^(%d+)$")
+    if not id then return "" end
+    return "rbxthumb://type=Asset&id=" .. id .. "&w=768&h=432"
+end
+
 local function GetLagSaverStatusText()
     if _G.AutoGoodFarm then
         local status = nil
@@ -405,18 +424,19 @@ local function ShowScreenCover()
     backgroundImage.Size = UDim2.new(1, 0, 1, 0)
     backgroundImage.Position = UDim2.new(0, 0, 0, 0)
     backgroundImage.BackgroundTransparency = 1
-    backgroundImage.Image = LAGSAVER_BACKGROUND_IMAGE
-    backgroundImage.ImageTransparency = 0.42
+    backgroundImage.Image = NormalizeImageId(_G.LagSaverBackgroundImage or LAGSAVER_BACKGROUND_IMAGE)
+    backgroundImage.ImageTransparency = 0.18
     backgroundImage.ScaleType = Enum.ScaleType.Crop
+    backgroundImage.Visible = backgroundImage.Image ~= ""
     backgroundImage.ZIndex = 10000
 
     local backgroundDim = Instance.new("Frame", cover)
     backgroundDim.Name = "LagSaverBackgroundDim"
     backgroundDim.Size = UDim2.new(1, 0, 1, 0)
     backgroundDim.BackgroundColor3 = Color3.fromRGB(3, 5, 10)
-    backgroundDim.BackgroundTransparency = 0.34
+    backgroundDim.BackgroundTransparency = 0.48
     backgroundDim.BorderSizePixel = 0
-    backgroundDim.ZIndex = 10000
+    backgroundDim.ZIndex = 10001
 
     local topLine = Instance.new("Frame", cover)
     topLine.Size = UDim2.new(1, 0, 0, 3)
@@ -455,9 +475,9 @@ local function ShowScreenCover()
     panel.Size = UDim2.new(0.78, 0, 0.86, 0)
     panel.Position = UDim2.new(0.5, 0, 0.5, 0)
     panel.BackgroundColor3 = Color3.fromRGB(8, 10, 18)
-    panel.BackgroundTransparency = 0.08
+    panel.BackgroundTransparency = 0.16
     panel.BorderSizePixel = 0
-    panel.ZIndex = 10001
+    panel.ZIndex = 10002
     Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
     local panelSize = Instance.new("UISizeConstraint", panel)
     panelSize.MinSize = Vector2.new(460, 360)
@@ -607,6 +627,27 @@ local function ShowScreenCover()
     end
 
     performanceState.screenCover = gui
+
+    task.spawn(function()
+        if not backgroundImage.Image or backgroundImage.Image == "" then return end
+        pcall(function()
+            ContentProvider:PreloadAsync({backgroundImage})
+        end)
+        task.wait(1.25)
+        local loaded = false
+        pcall(function()
+            loaded = backgroundImage.IsLoaded
+        end)
+        if not loaded and backgroundImage and backgroundImage.Parent then
+            local fallbackImage = GetAssetThumbnailId(backgroundImage.Image)
+            if fallbackImage ~= "" and fallbackImage ~= backgroundImage.Image then
+                backgroundImage.Image = fallbackImage
+                pcall(function()
+                    ContentProvider:PreloadAsync({backgroundImage})
+                end)
+            end
+        end
+    end)
 
     task.spawn(function()
         while performanceState.screenCover == gui and gui.Parent do

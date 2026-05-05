@@ -616,6 +616,7 @@ local function LoadMainUI()
     PageLayout.EasingDirection = Enum.EasingDirection.Out
     PageLayout.TweenTime = 0.4
     PageLayout.ScrollWheelInputEnabled = false
+    local scrollEndPadding = UserInputService.TouchEnabled and 115 or 36
 
     -- Helper Functions
     local function createPage(name)
@@ -628,8 +629,10 @@ local function LoadMainUI()
         p.ScrollBarImageColor3 = Colors.NeonRed
         p.ZIndex = 3
         p.ClipsDescendants = true
+        p.Active = true
         p.ScrollingEnabled = true
         p.ScrollingDirection = Enum.ScrollingDirection.Y
+        p.AutomaticCanvasSize = Enum.AutomaticSize.None
         local layout = Instance.new("UIListLayout", p)
         layout.Padding = UDim.new(0, 10)
         layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -637,8 +640,20 @@ local function LoadMainUI()
         local pad = Instance.new("UIPadding", p)
         pad.PaddingTop = UDim.new(0, 10)
         pad.PaddingBottom = UDim.new(0, 10)
-        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            p.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
+        local function updateCanvasSize()
+            if not p.Parent then return end
+            p.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + scrollEndPadding)
+        end
+        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvasSize)
+        p:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvasSize)
+        task.defer(updateCanvasSize)
+        task.delay(1, updateCanvasSize)
+        p.DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("GuiObject") then
+                descendant:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvasSize)
+                descendant:GetPropertyChangedSignal("Visible"):Connect(updateCanvasSize)
+                task.defer(updateCanvasSize)
+            end
         end)
         return p
     end
@@ -677,6 +692,27 @@ local function LoadMainUI()
         local pad = Instance.new("UIPadding", c)
         pad.PaddingTop = UDim.new(0, 8)
         pad.PaddingBottom = UDim.new(0, 8)
+        local minHeight = height or 0
+        local function updateContainerHeight()
+            if not c.Parent or not c.Visible then return end
+            local contentHeight = layout.AbsoluteContentSize.Y + pad.PaddingTop.Offset + pad.PaddingBottom.Offset + 4
+            local targetHeight = math.max(minHeight, contentHeight)
+            if c.Size.Y.Offset > 0 and math.abs(c.Size.Y.Offset - targetHeight) > 1 then
+                c.Size = UDim2.new(c.Size.X.Scale, c.Size.X.Offset, 0, targetHeight)
+            end
+        end
+        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateContainerHeight)
+        c:GetPropertyChangedSignal("Visible"):Connect(function()
+            task.defer(updateContainerHeight)
+        end)
+        c.DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("GuiObject") then
+                descendant:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateContainerHeight)
+                descendant:GetPropertyChangedSignal("Visible"):Connect(updateContainerHeight)
+                task.defer(updateContainerHeight)
+            end
+        end)
+        task.defer(updateContainerHeight)
         return c
     end
 
