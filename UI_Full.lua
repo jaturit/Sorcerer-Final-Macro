@@ -38,6 +38,8 @@ local LoadStoryTowers = _G.LoadStoryTowers
 local LoadDashboardCache = _G.LoadDashboardCache
 local HookEnabled = _G._HookEnabled
 local UserAuth = _G._UserAuth
+local ApplyLowPerformanceMode = _G.ApplyLowPerformanceMode
+local SetLowPerformanceFPS = _G.SetLowPerformanceFPS
 
 -- ShowLogin จะถูกประกาศใน LoginUI.lua ที่โหลดทีหลัง
 -- UI_Full เรียก ShowLogin() ผ่าน _G.ShowLogin แทน (deferred reference)
@@ -48,6 +50,270 @@ local CurrentData = {}
 local PlacedTowers = {}
 local CasinoSelectedFile = _G.CasinoSelectedFile or "None"
 local CasinoNextSpawnType = "Defense"
+
+local function applyTextGlow(obj, color, thickness, transparency)
+    if not _G.CyberpunkUI or not obj then return end
+    local glow = Instance.new("UIStroke", obj)
+    glow.Name = "CyberTextGlow"
+    glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+    glow.Color = color or obj.TextColor3
+    glow.Thickness = thickness or 1
+    glow.Transparency = transparency or 0.25
+    return glow
+end
+
+local function pulseTextGlow(obj, colorA, colorB)
+    if not _G.CyberpunkUI or not obj then return end
+    local glow = applyTextGlow(obj, colorA or obj.TextColor3, 1.3, 0.18)
+    task.spawn(function()
+        while glow and glow.Parent do
+            TweenService:Create(glow, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                Color = colorB or Color3.fromRGB(0, 255, 255),
+                Transparency = 0.05
+            }):Play()
+            task.wait(0.85)
+            if not glow or not glow.Parent then break end
+            TweenService:Create(glow, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                Color = colorA or obj.TextColor3,
+                Transparency = 0.22
+            }):Play()
+            task.wait(0.85)
+        end
+    end)
+    return glow
+end
+
+local function makeCyberToggleVisual(btn, dot, stroke)
+    if not _G.CyberpunkUI or not btn then return nil end
+    btn.ClipsDescendants = true
+
+    local runner = Instance.new("Frame", btn)
+    runner.Name = "CyberToggleRunner"
+    runner.Size = UDim2.new(0, 16, 1, 8)
+    runner.Position = UDim2.new(0, -18, 0, -4)
+    runner.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    runner.BackgroundTransparency = 0.15
+    runner.BorderSizePixel = 0
+    runner.Visible = false
+    runner.ZIndex = btn.ZIndex + 1
+    local runnerGradient = Instance.new("UIGradient", runner)
+    runnerGradient.Rotation = 0
+    runnerGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+
+    local gradient = Instance.new("UIGradient", btn)
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 180, 255)),
+        ColorSequenceKeypoint.new(0.45, Color3.fromRGB(0, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 235, 59)),
+    })
+    gradient.Rotation = 0
+
+    if stroke then
+        stroke.Thickness = 2
+    end
+    if dot then
+        dot.BackgroundColor3 = Color3.fromRGB(235, 255, 255)
+    end
+
+    local state = {
+        Gradient = gradient,
+        Runner = runner,
+        Stroke = stroke,
+        Active = false,
+    }
+
+    task.spawn(function()
+        local r = 0
+        while gradient and gradient.Parent do
+            r = (r + 5) % 360
+            if state.Active then
+                gradient.Rotation = r
+                if stroke then
+                    stroke.Transparency = 0.08 + (math.sin(tick() * 5) + 1) * 0.08
+                end
+                runner.Position = UDim2.new(0, -18, 0, -4)
+                TweenService:Create(runner, TweenInfo.new(0.55, Enum.EasingStyle.Linear), {
+                    Position = UDim2.new(1, 2, 0, -4)
+                }):Play()
+                task.wait(0.58)
+            else
+                task.wait(0.12)
+            end
+        end
+    end)
+
+    return state
+end
+
+local function applyCyberToggleState(btn, dot, stroke, visual, enabled)
+    local activeColor = _G.CyberpunkUI and Color3.fromRGB(0, 210, 255) or Colors.NeonRed
+    local offColor = _G.CyberpunkUI and Color3.fromRGB(13, 17, 27) or Colors.DarkGray
+    local activeStroke = _G.CyberpunkUI and Color3.fromRGB(0, 255, 255) or Colors.RedGlow
+    local offStroke = _G.CyberpunkUI and Color3.fromRGB(45, 80, 100) or Color3.fromRGB(60, 60, 60)
+
+    if visual then
+        visual.Active = enabled and true or false
+        if visual.Runner then visual.Runner.Visible = enabled and true or false end
+        if visual.Gradient then visual.Gradient.Enabled = enabled and true or false end
+    end
+    if btn then btn.BackgroundColor3 = enabled and activeColor or offColor end
+    if stroke then
+        stroke.Color = enabled and activeStroke or offStroke
+        stroke.Transparency = enabled and 0.08 or 0.45
+    end
+    if dot then
+        dot.BackgroundColor3 = enabled and Color3.fromRGB(235, 255, 255) or Color3.fromRGB(190, 200, 205)
+    end
+end
+
+local function normalizeImageId(value)
+    value = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if value == "" or value == "0" then return "" end
+    if value:match("^%d+$") then
+        return "rbxassetid://" .. value
+    end
+    return value
+end
+
+local function installCyberFrameEffects(MainFrame, MainStroke)
+    if _G.CyberpunkUI then
+        MainFrame.BackgroundColor3 = Color3.fromRGB(4, 5, 12)
+        local CyberStrokeGradient = Instance.new("UIGradient", MainStroke)
+        CyberStrokeGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(0.22, Color3.fromRGB(255, 235, 59)),
+            ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 20, 92)),
+            ColorSequenceKeypoint.new(0.7, Color3.fromRGB(127, 64, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 255)),
+        })
+
+        local OuterGlow = Instance.new("Frame", MainFrame)
+        OuterGlow.Name = "CyberOuterGlow"
+        OuterGlow.Size = UDim2.new(1, 14, 1, 14)
+        OuterGlow.Position = UDim2.new(0, -7, 0, -7)
+        OuterGlow.BackgroundTransparency = 1
+        OuterGlow.ZIndex = 0
+        OuterGlow.Parent = MainFrame
+        Instance.new("UICorner", OuterGlow).CornerRadius = UDim.new(0, 16)
+        local OuterStroke = Instance.new("UIStroke", OuterGlow)
+        OuterStroke.Thickness = 9
+        OuterStroke.Transparency = 0.48
+        local OuterGradient = Instance.new("UIGradient", OuterStroke)
+        OuterGradient.Color = CyberStrokeGradient.Color
+
+        local InnerGlow = Instance.new("Frame", MainFrame)
+        InnerGlow.Name = "CyberInnerGlow"
+        InnerGlow.Size = UDim2.new(1, -12, 1, -12)
+        InnerGlow.Position = UDim2.new(0, 6, 0, 6)
+        InnerGlow.BackgroundTransparency = 1
+        InnerGlow.ZIndex = 1
+        InnerGlow.Parent = MainFrame
+        Instance.new("UICorner", InnerGlow).CornerRadius = UDim.new(0, 10)
+        local InnerStroke = Instance.new("UIStroke", InnerGlow)
+        InnerStroke.Thickness = 1
+        InnerStroke.Transparency = 0.28
+        local InnerGradient = Instance.new("UIGradient", InnerStroke)
+        InnerGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 20, 92)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 20, 92)),
+        })
+
+        task.spawn(function()
+            local r = 0
+            while CyberStrokeGradient and CyberStrokeGradient.Parent do
+                r = (r + 2) % 360
+                CyberStrokeGradient.Rotation = r
+                OuterGradient.Rotation = (r + 90) % 360
+                InnerGradient.Rotation = (360 - r) % 360
+                task.wait(0.03)
+            end
+        end)
+    end
+
+    task.spawn(function()
+        while MainStroke and MainStroke.Parent do
+            TweenService:Create(MainStroke, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0}):Play()
+            task.wait(0.6)
+            if not MainStroke or not MainStroke.Parent then break end
+            TweenService:Create(MainStroke, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.3}):Play()
+            task.wait(0.6)
+        end
+    end)
+
+    local BackgroundImage = Instance.new("ImageLabel", MainFrame)
+    BackgroundImage.Name = "AnimeBackground"
+    BackgroundImage.Size = UDim2.new(1, 0, 1, 0)
+    BackgroundImage.Position = UDim2.new(0, 0, 0, 0)
+    BackgroundImage.BackgroundTransparency = 1
+    BackgroundImage.Image = normalizeImageId(_G.UIBackgroundImage)
+    BackgroundImage.ImageTransparency = math.clamp(_G.UIBackgroundTransparency or 0.52, 0.35, 1)
+    BackgroundImage.ScaleType = Enum.ScaleType.Crop
+    BackgroundImage.ZIndex = 1
+    BackgroundImage.Visible = BackgroundImage.Image ~= ""
+    BackgroundImage.Parent = MainFrame
+    Instance.new("UICorner", BackgroundImage).CornerRadius = UDim.new(0, 12)
+
+    local BackgroundShade = Instance.new("Frame", MainFrame)
+    BackgroundShade.Name = "CyberBackgroundShade"
+    BackgroundShade.Size = UDim2.new(1, 0, 1, 0)
+    BackgroundShade.BackgroundColor3 = Color3.fromRGB(3, 4, 10)
+    BackgroundShade.BackgroundTransparency = _G.CyberpunkUI and 0.48 or 0.18
+    BackgroundShade.BorderSizePixel = 0
+    BackgroundShade.ZIndex = 1
+    BackgroundShade.Parent = MainFrame
+    Instance.new("UICorner", BackgroundShade).CornerRadius = UDim.new(0, 12)
+
+    local ScanLine = Instance.new("Frame", MainFrame)
+    ScanLine.Name = "CyberScanLine"
+    ScanLine.Size = UDim2.new(0, 5, 1, -24)
+    ScanLine.Position = UDim2.new(0, 0, 0, 12)
+    ScanLine.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+    ScanLine.BackgroundTransparency = _G.CyberpunkUI and 0.32 or 1
+    ScanLine.BorderSizePixel = 0
+    ScanLine.ZIndex = 1
+    ScanLine.Parent = MainFrame
+    local ScanGradient = Instance.new("UIGradient", ScanLine)
+    ScanGradient.Rotation = 90
+    ScanGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+
+    if _G.CyberpunkUI then
+        task.spawn(function()
+            while ScanLine and ScanLine.Parent do
+                ScanLine.Position = UDim2.new(0, 4, 0, 12)
+                TweenService:Create(ScanLine, TweenInfo.new(2.8, Enum.EasingStyle.Linear), {
+                    Position = UDim2.new(1, -8, 0, 12)
+                }):Play()
+                task.wait(2.9)
+            end
+        end)
+    end
+
+    _G.SetUIBackgroundImage = function(value)
+        _G.UIBackgroundImage = normalizeImageId(value)
+        if BackgroundImage then
+            BackgroundImage.Image = _G.UIBackgroundImage
+            BackgroundImage.Visible = _G.UIBackgroundImage ~= ""
+        end
+    end
+
+    _G.SetUIBackgroundTransparency = function(value)
+        local num = tonumber(value)
+        if not num then return end
+        _G.UIBackgroundTransparency = math.clamp(num, 0.35, 1)
+        if BackgroundImage then
+            BackgroundImage.ImageTransparency = _G.UIBackgroundTransparency
+        end
+    end
+end
 
 -- ═══════════════════════════════════════════════════════
 -- 🖥️ MAIN UI CREATION (Full: all tabs)
@@ -193,23 +459,15 @@ local function LoadMainUI()
 
     local MainStroke = Instance.new("UIStroke", MainFrame)
     MainStroke.Color = Colors.NeonRed
-    MainStroke.Thickness = 2
+    MainStroke.Thickness = _G.CyberpunkUI and 3 or 2
     MainStroke.Transparency = 0.3
 
-    task.spawn(function()
-        while MainStroke and MainStroke.Parent do
-            TweenService:Create(MainStroke, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0}):Play()
-            task.wait(0.6)
-            if not MainStroke or not MainStroke.Parent then break end
-            TweenService:Create(MainStroke, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.3}):Play()
-            task.wait(0.6)
-        end
-    end)
+    installCyberFrameEffects(MainFrame, MainStroke)
 
     -- Sidebar
     local Sidebar = Instance.new("Frame", MainFrame)
     Sidebar.Size = UDim2.new(0, 150, 1, 0)
-    Sidebar.BackgroundColor3 = Colors.DarkGray
+    Sidebar.BackgroundColor3 = _G.CyberpunkUI and Color3.fromRGB(12, 13, 22) or Colors.DarkGray
     Sidebar.BorderSizePixel = 0
     Sidebar.ZIndex = 2
 
@@ -219,22 +477,23 @@ local function LoadMainUI()
     local SidebarFix = Instance.new("Frame", Sidebar)
     SidebarFix.Size = UDim2.new(0, 12, 1, 0)
     SidebarFix.Position = UDim2.new(1, -12, 0, 0)
-    SidebarFix.BackgroundColor3 = Colors.DarkGray
+    SidebarFix.BackgroundColor3 = Sidebar.BackgroundColor3
     SidebarFix.BorderSizePixel = 0
     SidebarFix.ZIndex = 2
 
     -- Title
     local AppTitle = Instance.new("TextLabel", Sidebar)
-    AppTitle.Text = "⚡ MACRO"
+    AppTitle.Text = _G.CyberpunkUI and "⚡ CYBER MACRO" or "⚡ MACRO"
     AppTitle.Size = UDim2.new(1, 0, 0, 50)
     AppTitle.BackgroundTransparency = 1
     AppTitle.TextColor3 = Colors.NeonRed
     AppTitle.Font = Enum.Font.GothamBold
     AppTitle.TextSize = 22
     AppTitle.ZIndex = 3
+    pulseTextGlow(AppTitle, Color3.fromRGB(255, 20, 92), Color3.fromRGB(0, 255, 255))
 
     local Subtitle = Instance.new("TextLabel", Sidebar)
-    Subtitle.Text = "v3.2 NO SKIP"
+    Subtitle.Text = _G.CyberpunkUI and "v3.2 // NEON MODE" or "v3.2 NO SKIP"
     Subtitle.Size = UDim2.new(1, 0, 0, 15)
     Subtitle.Position = UDim2.new(0, 0, 0, 45)
     Subtitle.BackgroundTransparency = 1
@@ -242,6 +501,7 @@ local function LoadMainUI()
     Subtitle.Font = Enum.Font.Gotham
     Subtitle.TextSize = 10
     Subtitle.ZIndex = 3
+    applyTextGlow(Subtitle, Color3.fromRGB(0, 255, 255), 0.8, 0.45)
 
     -- Key Status Display
     local KeyStatusFrame = Instance.new("Frame", Sidebar)
@@ -367,15 +627,31 @@ local function LoadMainUI()
     local function createContainer(parent, height)
         local c = Instance.new("Frame", parent)
         c.Size = UDim2.new(1, -20, 0, height)
-        c.BackgroundColor3 = Colors.MediumGray
-        c.BackgroundTransparency = 0.3
+        c.BackgroundColor3 = _G.CyberpunkUI and Color3.fromRGB(14, 15, 24) or Colors.MediumGray
+        c.BackgroundTransparency = _G.CyberpunkUI and 0.18 or 0.3
         c.ZIndex = 4
         c.ClipsDescendants = false
         Instance.new("UICorner", c).CornerRadius = UDim.new(0, 10)
         local stroke = Instance.new("UIStroke", c)
-        stroke.Color = Colors.NeonRed
-        stroke.Transparency = 0.7
-        stroke.Thickness = 1.5
+        stroke.Color = _G.CyberpunkUI and Color3.fromRGB(0, 255, 255) or Colors.NeonRed
+        stroke.Transparency = _G.CyberpunkUI and 0.35 or 0.7
+        stroke.Thickness = _G.CyberpunkUI and 2 or 1.5
+        if _G.CyberpunkUI then
+            local strokeGradient = Instance.new("UIGradient", stroke)
+            strokeGradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 255)),
+                ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 20, 92)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 235, 59)),
+            })
+            task.spawn(function()
+                local r = 0
+                while strokeGradient and strokeGradient.Parent do
+                    r = (r + 3) % 360
+                    strokeGradient.Rotation = r
+                    task.wait(0.05)
+                end
+            end)
+        end
         local layout = Instance.new("UIListLayout", c)
         layout.Padding = UDim.new(0, 6)
         layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -400,15 +676,16 @@ local function LoadMainUI()
         l.TextSize = 13
         l.TextXAlignment = Enum.TextXAlignment.Left
         l.ZIndex = 5
+        applyTextGlow(l, Color3.fromRGB(255, 20, 92), 0.8, 0.52)
         local btn = Instance.new("TextButton", f)
         btn.Size = UDim2.new(0, 42, 0, 22)
         btn.Position = UDim2.new(1, -52, 0.5, -11)
-        btn.BackgroundColor3 = default and Colors.NeonRed or Colors.DarkGray
+        btn.BackgroundColor3 = default and Color3.fromRGB(0, 210, 255) or (_G.CyberpunkUI and Color3.fromRGB(13, 17, 27) or Colors.DarkGray)
         btn.Text = ""
         btn.ZIndex = 5
         Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
         local btnStroke = Instance.new("UIStroke", btn)
-        btnStroke.Color = default and Colors.RedGlow or Color3.fromRGB(60, 60, 60)
+        btnStroke.Color = default and (_G.CyberpunkUI and Color3.fromRGB(0, 255, 255) or Colors.RedGlow) or (_G.CyberpunkUI and Color3.fromRGB(45, 80, 100) or Color3.fromRGB(60, 60, 60))
         btnStroke.Thickness = 1.5
         local dot = Instance.new("Frame", btn)
         dot.Size = UDim2.new(0, 16, 0, 16)
@@ -416,17 +693,17 @@ local function LoadMainUI()
         dot.BackgroundColor3 = Colors.White
         dot.ZIndex = 6
         Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+        local cyberVisual = makeCyberToggleVisual(btn, dot, btnStroke)
+        applyCyberToggleState(btn, dot, btnStroke, cyberVisual, default)
         local function setToggle(val)
             default = val
             dot.Position = val and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-            btn.BackgroundColor3 = val and Colors.NeonRed or Colors.DarkGray
-            btnStroke.Color = val and Colors.RedGlow or Color3.fromRGB(60, 60, 60)
+            applyCyberToggleState(btn, dot, btnStroke, cyberVisual, val)
         end
         btn.MouseButton1Click:Connect(function()
             default = not default
             TweenService:Create(dot, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {Position = default and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)}):Play()
-            TweenService:Create(btn, TweenInfo.new(0.25), {BackgroundColor3 = default and Colors.NeonRed or Colors.DarkGray}):Play()
-            TweenService:Create(btnStroke, TweenInfo.new(0.25), {Color = default and Colors.RedGlow or Color3.fromRGB(60, 60, 60)}):Play()
+            applyCyberToggleState(btn, dot, btnStroke, cyberVisual, default)
             callback(default)
             SaveConfig()
         end)
@@ -454,6 +731,7 @@ local function LoadMainUI()
         t.TextSize = 14
         t.TextXAlignment = Enum.TextXAlignment.Left
         t.ZIndex = 6
+        applyTextGlow(t, Color3.fromRGB(255, 20, 92), 0.9, 0.3)
         local d = Instance.new("TextLabel", btn)
         d.Text = desc
         d.Size = UDim2.new(1, -15, 0, 18)
@@ -719,6 +997,7 @@ local function LoadMainUI()
         btn.Font = Enum.Font.GothamMedium
         btn.TextSize = 12
         btn.ZIndex = 3
+        applyTextGlow(btn, Color3.fromRGB(255, 20, 92), 0.9, 0.38)
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
         local stroke = Instance.new("UIStroke", btn)
         stroke.Color = Colors.DarkRed
@@ -1052,6 +1331,7 @@ local function LoadMainUI()
     h1.TextSize = 15
     h1.TextXAlignment = Enum.TextXAlignment.Left
     h1.ZIndex = 4
+    pulseTextGlow(h1, Color3.fromRGB(255, 20, 92), Color3.fromRGB(0, 255, 255))
 
     -- Dashboard Stats Box
     local DashBox = createContainer(Page1, 210)
@@ -1171,8 +1451,9 @@ local function LoadMainUI()
     h1ctrl.TextSize = 15
     h1ctrl.TextXAlignment = Enum.TextXAlignment.Left
     h1ctrl.ZIndex = 4
+    pulseTextGlow(h1ctrl, Color3.fromRGB(255, 20, 92), Color3.fromRGB(255, 235, 59))
 
-    local MainBox = createContainer(Page1, 550)
+    local MainBox = createContainer(Page1, 780)
 
     _G.SetDashboardAutoPlay = createToggle(MainBox, "▶️ Auto Play Macro", _G.AutoPlay, function(v)
         _G._IsEventAutoPlay = false
@@ -1193,6 +1474,33 @@ local function LoadMainUI()
         _G.FastSkip = v
         SaveConfig()
     end)
+
+    _G.LowPerformanceMode = _G.LowPerformanceMode or false
+    _G.LowPerformanceFPS = tonumber(_G.LowPerformanceFPS) or 15
+    _G.SetLagSaverToggle = createToggle(MainBox, "⬜ Lag Saver (White Screen + Low FPS)", _G.LowPerformanceMode, function(v)
+        _G.LowPerformanceMode = v
+        if ApplyLowPerformanceMode then
+            ApplyLowPerformanceMode(v)
+        end
+        SaveConfig()
+    end)
+
+    createInput(MainBox, "Lag Saver FPS", "10 / 15 / 20", tostring(_G.LowPerformanceFPS), function(text)
+        local fps = tonumber(text)
+        if fps then
+            if fps < 5 then fps = 5 end
+            if fps > 60 then fps = 60 end
+            fps = math.floor(fps)
+            _G.LowPerformanceFPS = fps
+            if SetLowPerformanceFPS then
+                SetLowPerformanceFPS(fps)
+            elseif ApplyLowPerformanceMode then
+                ApplyLowPerformanceMode(_G.LowPerformanceMode)
+            end
+            SaveConfig()
+        end
+    end)
+
     createToggle(MainBox, "🚪 Auto To Lobby", _G.AutoToLobby, function(v) _G.AutoToLobby = v; SaveConfig() end)
 
     _G.PrivateServerLink = _G.PrivateServerLink or ""
@@ -4310,7 +4618,9 @@ local function LoadMainUI()
     storyToggleBtn.BackgroundColor3 = Colors.MediumGray
     storyToggleBtn.ZIndex = 5
     Instance.new("UICorner", storyToggleBtn).CornerRadius = UDim.new(1, 0)
-    Instance.new("UIStroke", storyToggleBtn).Color = Colors.LightGray
+    local storyToggleStroke = Instance.new("UIStroke", storyToggleBtn)
+    storyToggleStroke.Color = Colors.LightGray
+    storyToggleStroke.Thickness = 1.5
 
     local storyToggleCircle = Instance.new("Frame", storyToggleBtn)
     storyToggleCircle.Size = UDim2.new(0, 18, 0, 18)
@@ -4318,16 +4628,17 @@ local function LoadMainUI()
     storyToggleCircle.BackgroundColor3 = Colors.White
     storyToggleCircle.ZIndex = 6
     Instance.new("UICorner", storyToggleCircle).CornerRadius = UDim.new(1, 0)
+    local storyCyberVisual = makeCyberToggleVisual(storyToggleBtn, storyToggleCircle, storyToggleStroke)
 
     local function updateStoryToggle(val)
         if val then
-            storyToggleBtn.BackgroundColor3 = Colors.NeonRed
             storyToggleCircle.Position = UDim2.new(1, -20, 0.5, -9)
         else
-            storyToggleBtn.BackgroundColor3 = Colors.MediumGray
             storyToggleCircle.Position = UDim2.new(0, 2, 0.5, -9)
         end
+        applyCyberToggleState(storyToggleBtn, storyToggleCircle, storyToggleStroke, storyCyberVisual, val)
     end
+    updateStoryToggle(_G.AutoStory)
 
     storyToggleBtn.MouseButton1Click:Connect(function()
         _G.AutoStory = not _G.AutoStory
@@ -4396,7 +4707,7 @@ local function LoadMainUI()
         end
     end)
 
-    local h3 = Instance.new("TextLabel", Page1)
+    local h3 = Instance.new("TextLabel", Page3)
     h3.Text = "🔔 DISCORD WEBHOOK"
     h3.Size = UDim2.new(1, -20, 0, 30)
     h3.BackgroundTransparency = 1
@@ -4405,8 +4716,9 @@ local function LoadMainUI()
     h3.TextSize = 15
     h3.TextXAlignment = Enum.TextXAlignment.Left
     h3.ZIndex = 4
+    pulseTextGlow(h3, Color3.fromRGB(255, 20, 92), Color3.fromRGB(0, 255, 255))
 
-    local DiscordBox = createContainer(Page1, 180)
+    local DiscordBox = createContainer(Page3, 180)
     local urlFrame = Instance.new("Frame", DiscordBox)
     urlFrame.Size = UDim2.new(1, -20, 0, 80)
     urlFrame.BackgroundTransparency = 1
@@ -4455,6 +4767,7 @@ local function LoadMainUI()
     createTab("📖 Story", Page6)
     createTab("🛒 Shop", Page7)
     createTab("🎪 Event", Page8)
+    createTab("📨 Discord", Page3)
 
     -- Logout Button (inside ButtonContainer so it scrolls with tabs)
     local LogoutBtn = Instance.new("TextButton", ButtonContainer)
@@ -4503,17 +4816,38 @@ local function LoadMainUI()
     local ToggleBtn = Instance.new("TextButton", ScreenGui)
     ToggleBtn.Size = UDim2.new(0, 55, 0, 55)
     ToggleBtn.Position = UDim2.new(0, 15, 0.5, -27)
-    ToggleBtn.BackgroundColor3 = Colors.Black
+    ToggleBtn.BackgroundColor3 = _G.CyberpunkUI and Color3.fromRGB(4, 8, 14) or Colors.Black
     ToggleBtn.Text = "⚡"
-    ToggleBtn.TextColor3 = Colors.NeonRed
+    ToggleBtn.TextColor3 = _G.CyberpunkUI and Color3.fromRGB(0, 255, 255) or Colors.NeonRed
     ToggleBtn.Font = Enum.Font.GothamBold
     ToggleBtn.TextSize = 22
     ToggleBtn.ZIndex = 50
+    ToggleBtn.ClipsDescendants = true
     Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
     local toggleStroke = Instance.new("UIStroke", ToggleBtn)
-    toggleStroke.Color = Colors.NeonRed
-    toggleStroke.Thickness = 2
-    toggleStroke.Transparency = 0.3
+    toggleStroke.Color = _G.CyberpunkUI and Color3.fromRGB(0, 255, 255) or Colors.NeonRed
+    toggleStroke.Thickness = _G.CyberpunkUI and 3 or 2
+    toggleStroke.Transparency = _G.CyberpunkUI and 0.08 or 0.3
+    applyTextGlow(ToggleBtn, Color3.fromRGB(0, 255, 255), 1.4, 0.1)
+
+    if _G.CyberpunkUI then
+        local toggleGradient = Instance.new("UIGradient", toggleStroke)
+        toggleGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 235, 59)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 20, 92)),
+        })
+
+        task.spawn(function()
+            local r = 0
+            while toggleGradient and toggleGradient.Parent do
+                r = (r + 6) % 360
+                toggleGradient.Rotation = r
+                toggleStroke.Transparency = 0.04 + (math.sin(tick() * 5) + 1) * 0.06
+                task.wait(0.03)
+            end
+        end)
+    end
 
     task.spawn(function()
         while toggleStroke and toggleStroke.Parent do

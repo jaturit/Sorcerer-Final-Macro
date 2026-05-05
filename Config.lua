@@ -10,6 +10,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
 
 local Request = request or http_request or (syn and syn.request) or (http and http.request) or (fluxus and fluxus.request) or function() return nil end
 
@@ -21,6 +23,7 @@ local AUTH_FILE = FOLDER.."/user_auth.json"
 local CONFIG_FILE = FOLDER.."/settings.json"
 local MAP_CONFIG_FILE = FOLDER.."/map_macros.json"
 local GOODFARM_STATE_FILE = FOLDER.."/goodfarm_state.json"
+local LAGSAVER_STATE_FILE = FOLDER.."/lag_saver_state.json"
 
 pcall(function()
     if not isfolder(FOLDER) then makefolder(FOLDER) end
@@ -34,6 +37,8 @@ _G._Services = {
     ReplicatedStorage = ReplicatedStorage,
     UserInputService = UserInputService,
     TweenService = TweenService,
+    RunService = RunService,
+    Lighting = Lighting,
 }
 _G._Request = Request
 _G._Player = Player
@@ -44,6 +49,7 @@ _G._GOODFARM_STATE_FILE = GOODFARM_STATE_FILE
 _G._AUTH_FILE = AUTH_FILE
 _G._CONFIG_FILE = CONFIG_FILE
 _G._MAP_CONFIG_FILE = MAP_CONFIG_FILE
+_G._LAGSAVER_STATE_FILE = LAGSAVER_STATE_FILE
 
 -- ═══════════════════════════════════════════════════════
 -- 🎯 GLOBAL VARIABLES
@@ -62,6 +68,11 @@ _G.AutoJoinRaidGojo = false
 _G.AutoCasinoPlay = false
 _G.AutoCasinoEnabled = false  -- ผู้ใช้ต้องการ auto (ไม่ reset ตอน macro จบ)
 _G.CasinoSelectedFile = "None"
+_G.LowPerformanceMode = false
+_G.LowPerformanceFPS = 15
+_G.CyberpunkUI = true
+_G.UIBackgroundImage = "rbxassetid://90298702993965"
+_G.UIBackgroundTransparency = 0.52
 
 -- Auto Story
 _G.AutoStory = false
@@ -154,6 +165,445 @@ local Colors = {
     Orange = Color3.fromRGB(255, 150, 0),
 }
 _G._Colors = Colors
+
+-- Low FPS / low graphics mode for long farm sessions.
+local performanceState = {
+    originals = setmetatable({}, { __mode = "k" }),
+    connection = nil,
+    originalFPSCap = nil,
+    screenCover = nil,
+}
+
+local function ClampNumber(value, minValue, maxValue)
+    value = tonumber(value) or minValue
+    value = math.floor(value)
+    if value < minValue then return minValue end
+    if value > maxValue then return maxValue end
+    return value
+end
+
+local function SaveOriginal(instance, property)
+    local ok, current = pcall(function()
+        return instance[property]
+    end)
+    if not ok then return end
+    local props = performanceState.originals[instance]
+    if not props then
+        props = {}
+        performanceState.originals[instance] = props
+    end
+    if props[property] == nil then
+        props[property] = current
+    end
+end
+
+local function SetOptimizedProperty(instance, property, value)
+    pcall(function()
+        SaveOriginal(instance, property)
+        instance[property] = value
+    end)
+end
+
+local function GetFPSCapper()
+    return setfpscap or set_fps_cap or (syn and syn.setfpscap)
+end
+
+local function SetFPSCap(value)
+    local capper = GetFPSCapper()
+    if type(capper) == "function" then
+        pcall(capper, value)
+        return true
+    end
+    return false
+end
+
+local function ApplyQualityLevel()
+    pcall(function()
+        UserSettings():GetService("UserGameSettings").SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+    end)
+    pcall(function()
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    end)
+end
+
+local function OptimizeInstance(instance)
+    if instance:IsA("ParticleEmitter") or instance:IsA("Trail") or instance:IsA("Beam")
+        or instance:IsA("Smoke") or instance:IsA("Fire") or instance:IsA("Sparkles") then
+        SetOptimizedProperty(instance, "Enabled", false)
+    elseif instance:IsA("Decal") or instance:IsA("Texture") then
+        SetOptimizedProperty(instance, "Transparency", 1)
+    elseif instance:IsA("PointLight") or instance:IsA("SpotLight") or instance:IsA("SurfaceLight") then
+        SetOptimizedProperty(instance, "Enabled", false)
+    elseif instance:IsA("PostEffect") then
+        SetOptimizedProperty(instance, "Enabled", false)
+    elseif instance:IsA("BasePart") then
+        SetOptimizedProperty(instance, "CastShadow", false)
+        SetOptimizedProperty(instance, "Reflectance", 0)
+    end
+end
+
+local function RestoreOptimizedProperties()
+    for instance, props in pairs(performanceState.originals) do
+        if instance and instance.Parent then
+            for property, value in pairs(props) do
+                pcall(function()
+                    instance[property] = value
+                end)
+            end
+        end
+    end
+    performanceState.originals = setmetatable({}, { __mode = "k" })
+end
+
+local ApplyLowPerformanceMode
+
+local function SaveLagSaverState()
+    pcall(function()
+        writefile(LAGSAVER_STATE_FILE, HttpService:JSONEncode({
+            Enabled = _G.LowPerformanceMode and true or false,
+            FPS = ClampNumber(_G.LowPerformanceFPS or 15, 5, 60),
+            UpdatedAt = os.time()
+        }))
+    end)
+end
+
+local function LoadLagSaverState()
+    local state = nil
+    pcall(function()
+        if isfile and isfile(LAGSAVER_STATE_FILE) then
+            state = HttpService:JSONDecode(readfile(LAGSAVER_STATE_FILE))
+        end
+    end)
+    return state
+end
+
+local function DestroyScreenCover()
+    if performanceState.screenCover then
+        pcall(function()
+            performanceState.screenCover:Destroy()
+        end)
+        performanceState.screenCover = nil
+    end
+end
+
+local function GetLagSaverStatusText()
+    if _G.AutoGoodFarm then
+        local status = nil
+        pcall(function()
+            status = _G._GoodFarmStatusLabel and _G._GoodFarmStatusLabel.Text
+        end)
+        return status or "Good Farm is running"
+    end
+    if _G.AutoCasinoPlay or _G.AutoCasinoEnabled then
+        return "Casino macro is running"
+    end
+    if _G.AutoStory then
+        return "Auto Story is running"
+    end
+    if _G.StoryMacroMode then
+        return "Story macro mode is running"
+    end
+    if _G.AutoEvent or _G.AutoEventMacro then
+        return "Event automation is running"
+    end
+    if _G.MacroRunning or _G.AutoPlay then
+        return "Macro is running"
+    end
+    return _G.LagSaverStatus or "Waiting for automation"
+end
+
+local function GetLagSaverDashboardText()
+    local text = ""
+    pcall(function()
+        if _G.GetDashboardText then
+            text = _G.GetDashboardText()
+        end
+    end)
+    if text == "" then
+        text = "Dashboard data will appear after the first cache update"
+    end
+    return text
+end
+
+local function GetLagSaverResultText()
+    local result = _G.LastGameResult
+    if type(result) == "table" and result.Text and result.Text ~= "" then
+        return result.Text
+    end
+    return "No completed run yet"
+end
+
+local function ShowScreenCover()
+    DestroyScreenCover()
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "LagSaverWhiteScreen"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 2147483647
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    local cover = Instance.new("Frame", gui)
+    cover.Name = "LagSaverStatusCover"
+    cover.Size = UDim2.new(1, 0, 1, 0)
+    cover.Position = UDim2.new(0, 0, 0, 0)
+    cover.BackgroundColor3 = Color3.fromRGB(3, 5, 10)
+    cover.BorderSizePixel = 0
+    cover.ZIndex = 10000
+
+    local topLine = Instance.new("Frame", cover)
+    topLine.Size = UDim2.new(1, 0, 0, 3)
+    topLine.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+    topLine.BorderSizePixel = 0
+    topLine.ZIndex = 10001
+
+    local title = Instance.new("TextLabel", cover)
+    title.Size = UDim2.new(1, -40, 0, 46)
+    title.Position = UDim2.new(0, 24, 0, 18)
+    title.BackgroundTransparency = 1
+    title.Text = "LAG SAVER // BOT STATUS"
+    title.TextColor3 = Color3.fromRGB(0, 255, 255)
+    title.Font = Enum.Font.GothamBlack
+    title.TextSize = 24
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 10001
+    local titleGlow = Instance.new("UIStroke", title)
+    titleGlow.Color = Color3.fromRGB(0, 180, 255)
+    titleGlow.Thickness = 1
+    titleGlow.Transparency = 0.25
+
+    local subtitle = Instance.new("TextLabel", cover)
+    subtitle.Size = UDim2.new(1, -40, 0, 24)
+    subtitle.Position = UDim2.new(0, 26, 0, 60)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = "Rendering is covered. Macro logic continues in the background."
+    subtitle.TextColor3 = Color3.fromRGB(190, 210, 220)
+    subtitle.Font = Enum.Font.GothamMedium
+    subtitle.TextSize = 12
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.ZIndex = 10001
+
+    local panel = Instance.new("Frame", cover)
+    panel.Size = UDim2.new(0, 620, 0, 360)
+    panel.Position = UDim2.new(0.5, -310, 0.5, -180)
+    panel.BackgroundColor3 = Color3.fromRGB(8, 10, 18)
+    panel.BackgroundTransparency = 0.08
+    panel.BorderSizePixel = 0
+    panel.ZIndex = 10001
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
+    local panelStroke = Instance.new("UIStroke", panel)
+    panelStroke.Color = Color3.fromRGB(0, 255, 255)
+    panelStroke.Thickness = 2
+    panelStroke.Transparency = 0.2
+
+    local accent = Instance.new("Frame", panel)
+    accent.Size = UDim2.new(0, 5, 1, -24)
+    accent.Position = UDim2.new(0, 14, 0, 12)
+    accent.BackgroundColor3 = Color3.fromRGB(255, 235, 59)
+    accent.BorderSizePixel = 0
+    accent.ZIndex = 10002
+
+    local statusLabel = Instance.new("TextLabel", panel)
+    statusLabel.Size = UDim2.new(1, -60, 0, 34)
+    statusLabel.Position = UDim2.new(0, 34, 0, 24)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.TextColor3 = Color3.fromRGB(0, 255, 140)
+    statusLabel.Font = Enum.Font.GothamBold
+    statusLabel.TextSize = 18
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.ZIndex = 10002
+
+    local macroLabel = Instance.new("TextLabel", panel)
+    macroLabel.Size = UDim2.new(1, -60, 0, 24)
+    macroLabel.Position = UDim2.new(0, 34, 0, 64)
+    macroLabel.BackgroundTransparency = 1
+    macroLabel.TextColor3 = Color3.fromRGB(235, 245, 255)
+    macroLabel.Font = Enum.Font.GothamMedium
+    macroLabel.TextSize = 13
+    macroLabel.TextXAlignment = Enum.TextXAlignment.Left
+    macroLabel.ZIndex = 10002
+
+    local waveLabel = Instance.new("TextLabel", panel)
+    waveLabel.Size = UDim2.new(1, -60, 0, 24)
+    waveLabel.Position = UDim2.new(0, 34, 0, 92)
+    waveLabel.BackgroundTransparency = 1
+    waveLabel.TextColor3 = Color3.fromRGB(255, 235, 59)
+    waveLabel.Font = Enum.Font.GothamMedium
+    waveLabel.TextSize = 13
+    waveLabel.TextXAlignment = Enum.TextXAlignment.Left
+    waveLabel.ZIndex = 10002
+
+    local dashboardTitle = Instance.new("TextLabel", panel)
+    dashboardTitle.Size = UDim2.new(1, -60, 0, 22)
+    dashboardTitle.Position = UDim2.new(0, 34, 0, 128)
+    dashboardTitle.BackgroundTransparency = 1
+    dashboardTitle.Text = "DASHBOARD CACHE"
+    dashboardTitle.TextColor3 = Color3.fromRGB(0, 255, 255)
+    dashboardTitle.Font = Enum.Font.GothamBold
+    dashboardTitle.TextSize = 12
+    dashboardTitle.TextXAlignment = Enum.TextXAlignment.Left
+    dashboardTitle.ZIndex = 10002
+
+    local dashboardLabel = Instance.new("TextLabel", panel)
+    dashboardLabel.Size = UDim2.new(1, -60, 0, 48)
+    dashboardLabel.Position = UDim2.new(0, 34, 0, 152)
+    dashboardLabel.BackgroundColor3 = Color3.fromRGB(12, 15, 24)
+    dashboardLabel.BackgroundTransparency = 0.15
+    dashboardLabel.TextColor3 = Color3.fromRGB(230, 240, 245)
+    dashboardLabel.Font = Enum.Font.Gotham
+    dashboardLabel.TextSize = 12
+    dashboardLabel.TextWrapped = true
+    dashboardLabel.TextXAlignment = Enum.TextXAlignment.Left
+    dashboardLabel.TextYAlignment = Enum.TextYAlignment.Center
+    dashboardLabel.ZIndex = 10002
+    Instance.new("UICorner", dashboardLabel).CornerRadius = UDim.new(0, 6)
+    local dashboardPad = Instance.new("UIPadding", dashboardLabel)
+    dashboardPad.PaddingLeft = UDim.new(0, 10)
+    dashboardPad.PaddingRight = UDim.new(0, 10)
+
+    local resultTitle = Instance.new("TextLabel", panel)
+    resultTitle.Size = UDim2.new(1, -60, 0, 22)
+    resultTitle.Position = UDim2.new(0, 34, 0, 214)
+    resultTitle.BackgroundTransparency = 1
+    resultTitle.Text = "LAST RUN RESULT"
+    resultTitle.TextColor3 = Color3.fromRGB(255, 20, 92)
+    resultTitle.Font = Enum.Font.GothamBold
+    resultTitle.TextSize = 12
+    resultTitle.TextXAlignment = Enum.TextXAlignment.Left
+    resultTitle.ZIndex = 10002
+
+    local resultLabel = Instance.new("TextLabel", panel)
+    resultLabel.Size = UDim2.new(1, -60, 0, 96)
+    resultLabel.Position = UDim2.new(0, 34, 0, 238)
+    resultLabel.BackgroundColor3 = Color3.fromRGB(12, 15, 24)
+    resultLabel.BackgroundTransparency = 0.15
+    resultLabel.TextColor3 = Color3.fromRGB(230, 240, 245)
+    resultLabel.Font = Enum.Font.Gotham
+    resultLabel.TextSize = 11
+    resultLabel.TextWrapped = true
+    resultLabel.TextXAlignment = Enum.TextXAlignment.Left
+    resultLabel.TextYAlignment = Enum.TextYAlignment.Top
+    resultLabel.ZIndex = 10002
+    Instance.new("UICorner", resultLabel).CornerRadius = UDim.new(0, 6)
+    local resultPad = Instance.new("UIPadding", resultLabel)
+    resultPad.PaddingTop = UDim.new(0, 8)
+    resultPad.PaddingLeft = UDim.new(0, 10)
+    resultPad.PaddingRight = UDim.new(0, 10)
+
+    local offButton = Instance.new("TextButton", cover)
+    offButton.Name = "DisableLagSaver"
+    offButton.Size = UDim2.new(0, 190, 0, 40)
+    offButton.Position = UDim2.new(1, -210, 0, 18)
+    offButton.BackgroundColor3 = Color3.fromRGB(10, 12, 20)
+    offButton.Text = "DISABLE LAG SAVER"
+    offButton.TextColor3 = Color3.fromRGB(0, 255, 255)
+    offButton.Font = Enum.Font.GothamBold
+    offButton.TextSize = 12
+    offButton.ZIndex = 10001
+    Instance.new("UICorner", offButton).CornerRadius = UDim.new(0, 8)
+    local offStroke = Instance.new("UIStroke", offButton)
+    offStroke.Color = Color3.fromRGB(0, 255, 255)
+    offStroke.Thickness = 1.5
+    offStroke.Transparency = 0.25
+
+    offButton.MouseButton1Click:Connect(function()
+        ApplyLowPerformanceMode(false)
+        if _G.SetLagSaverToggle then
+            _G.SetLagSaverToggle(false)
+        end
+        if _G.SaveConfig then
+            _G.SaveConfig()
+        end
+    end)
+
+    pcall(function()
+        gui.Parent = game:GetService("CoreGui")
+    end)
+    if not gui.Parent then
+        gui.Parent = PlayerGui
+    end
+
+    performanceState.screenCover = gui
+
+    task.spawn(function()
+        while performanceState.screenCover == gui and gui.Parent do
+            statusLabel.Text = "STATUS: " .. GetLagSaverStatusText()
+            macroLabel.Text = "MACRO: " .. tostring(_G.SelectedFile or "None") .. "   |   CASINO: " .. tostring(_G.CasinoSelectedFile or "None")
+            waveLabel.Text = "WAVE: " .. tostring(_G._CurrentWave or 0) .. "   |   FPS CAP: " .. tostring(_G.LowPerformanceFPS or 15)
+            dashboardLabel.Text = GetLagSaverDashboardText()
+            resultLabel.Text = GetLagSaverResultText()
+            task.wait(1)
+        end
+    end)
+end
+
+function ApplyLowPerformanceMode(enabled)
+    _G.LowPerformanceMode = enabled and true or false
+    _G.LowPerformanceFPS = ClampNumber(_G.LowPerformanceFPS, 5, 60)
+    SaveLagSaverState()
+
+    if _G.LowPerformanceMode then
+        if performanceState.originalFPSCap == nil then
+            pcall(function()
+                if type(getfpscap) == "function" then
+                    performanceState.originalFPSCap = getfpscap()
+                end
+            end)
+        end
+
+        SetFPSCap(_G.LowPerformanceFPS)
+        ApplyQualityLevel()
+
+        SetOptimizedProperty(Lighting, "GlobalShadows", false)
+        SetOptimizedProperty(Lighting, "EnvironmentDiffuseScale", 0)
+        SetOptimizedProperty(Lighting, "EnvironmentSpecularScale", 0)
+        SetOptimizedProperty(Lighting, "FogEnd", 100000)
+
+        local terrain = workspace:FindFirstChildOfClass("Terrain")
+        if terrain then
+            SetOptimizedProperty(terrain, "WaterWaveSize", 0)
+            SetOptimizedProperty(terrain, "WaterWaveSpeed", 0)
+            SetOptimizedProperty(terrain, "WaterReflectance", 0)
+            SetOptimizedProperty(terrain, "WaterTransparency", 1)
+            SetOptimizedProperty(terrain, "Decoration", false)
+        end
+
+        for _, instance in ipairs(game:GetDescendants()) do
+            OptimizeInstance(instance)
+        end
+
+        if performanceState.connection then
+            performanceState.connection:Disconnect()
+        end
+        performanceState.connection = game.DescendantAdded:Connect(function(instance)
+            if _G.LowPerformanceMode then
+                task.defer(OptimizeInstance, instance)
+            end
+        end)
+
+        ShowScreenCover()
+        print("[Lag Saver] Enabled at " .. tostring(_G.LowPerformanceFPS) .. " FPS")
+    else
+        if performanceState.connection then
+            performanceState.connection:Disconnect()
+            performanceState.connection = nil
+        end
+
+        DestroyScreenCover()
+        RestoreOptimizedProperties()
+        SetFPSCap(performanceState.originalFPSCap or 60)
+        print("[Lag Saver] Disabled")
+    end
+end
+
+_G.ApplyLowPerformanceMode = ApplyLowPerformanceMode
+_G.SetLowPerformanceFPS = function(value)
+    _G.LowPerformanceFPS = ClampNumber(value, 5, 60)
+    SaveLagSaverState()
+    if _G.LowPerformanceMode then
+        ApplyLowPerformanceMode(true)
+    end
+end
 
 -- ═══════════════════════════════════════════════════════
 -- 💾 DATA ENCODE / DECODE
@@ -249,7 +699,12 @@ local function SaveConfig()
             AutoGoodFarm = _G.AutoGoodFarm,
             GoodFarmQueue = _G.GoodFarmQueue,
             GoodFarmCurrentMode = _G.GoodFarmCurrentMode,
-            GoodFarmRoundsDone = _G.GoodFarmRoundsDone
+            GoodFarmRoundsDone = _G.GoodFarmRoundsDone,
+            LowPerformanceMode = _G.LowPerformanceMode,
+            LowPerformanceFPS = _G.LowPerformanceFPS,
+            CyberpunkUI = _G.CyberpunkUI,
+            UIBackgroundImage = _G.UIBackgroundImage,
+            UIBackgroundTransparency = _G.UIBackgroundTransparency
         }
         writefile(CONFIG_FILE, HttpService:JSONEncode(cfg))
     end)
@@ -293,6 +748,12 @@ local function LoadConfig()
             _G.AutoRejoinPS = data.AutoRejoinPS or false
             _G.AutoGoodFarm = data.AutoGoodFarm or false
             _G.GoodFarmRoundsDone = data.GoodFarmRoundsDone or 0
+            _G.LowPerformanceMode = data.LowPerformanceMode or false
+            _G.LowPerformanceFPS = ClampNumber(data.LowPerformanceFPS or 15, 5, 60)
+            _G.CyberpunkUI = data.CyberpunkUI
+            if _G.CyberpunkUI == nil then _G.CyberpunkUI = true end
+            _G.UIBackgroundImage = "rbxassetid://90298702993965"
+            _G.UIBackgroundTransparency = ClampNumber(data.UIBackgroundTransparency or 0.52, 0.35, 1)
             if data.GoodFarmQueue then
                 _G.GoodFarmQueue = data.GoodFarmQueue
                 -- เช็ค mode ที่ขาดแล้วเติมให้อัตโนมัติ (กรณี config เก่าไม่มี mode ใหม่)
@@ -309,11 +770,27 @@ local function LoadConfig()
             end
             _G.GoodFarmCurrentMode = data.GoodFarmCurrentMode or 1
         end
+
+        local lagState = LoadLagSaverState()
+        if type(lagState) == "table" then
+            if lagState.Enabled ~= nil then
+                _G.LowPerformanceMode = lagState.Enabled and true or false
+            end
+            if lagState.FPS then
+                _G.LowPerformanceFPS = ClampNumber(lagState.FPS, 5, 60)
+            end
+        end
+
+        if _G.LowPerformanceMode then
+            ApplyLowPerformanceMode(true)
+        end
     end)
 end
 
 _G.SaveConfig = SaveConfig
 _G.LoadConfig = LoadConfig
+_G.SaveLagSaverState = SaveLagSaverState
+_G.LoadLagSaverState = LoadLagSaverState
 
 -- ═══════════════════════════════════════════════════════
 -- 🗺️ MAP-MACRO BINDING SYSTEM
