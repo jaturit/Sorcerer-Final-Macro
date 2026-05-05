@@ -25,6 +25,8 @@ local MAP_CONFIG_FILE = FOLDER.."/map_macros.json"
 local GOODFARM_STATE_FILE = FOLDER.."/goodfarm_state.json"
 local LAGSAVER_STATE_FILE = FOLDER.."/lag_saver_state.json"
 local CULLING_POINTS_FILE = FOLDER.."/culling_points.txt"
+local LAST_RESULT_FILE = FOLDER.."/last_run_result.json"
+local LAGSAVER_BACKGROUND_IMAGE = "rbxassetid://85556556528294"
 
 pcall(function()
     if not isfolder(FOLDER) then makefolder(FOLDER) end
@@ -52,6 +54,7 @@ _G._CONFIG_FILE = CONFIG_FILE
 _G._MAP_CONFIG_FILE = MAP_CONFIG_FILE
 _G._LAGSAVER_STATE_FILE = LAGSAVER_STATE_FILE
 _G._CULLING_POINTS_FILE = CULLING_POINTS_FILE
+_G._LAST_RESULT_FILE = LAST_RESULT_FILE
 
 -- ═══════════════════════════════════════════════════════
 -- 🎯 GLOBAL VARIABLES
@@ -364,6 +367,18 @@ local function GetLagSaverResultText()
     if type(result) == "table" and result.Text and result.Text ~= "" then
         return result.Text
     end
+    pcall(function()
+        if isfile and isfile(LAST_RESULT_FILE) then
+            local data = HttpService:JSONDecode(readfile(LAST_RESULT_FILE))
+            if type(data) == "table" and data.Text and data.Text ~= "" then
+                result = data
+            end
+        end
+    end)
+    if type(result) == "table" and result.Text and result.Text ~= "" then
+        _G.LastGameResult = result
+        return result.Text
+    end
     return "No completed run yet"
 end
 
@@ -384,6 +399,24 @@ local function ShowScreenCover()
     cover.BackgroundColor3 = Color3.fromRGB(3, 5, 10)
     cover.BorderSizePixel = 0
     cover.ZIndex = 10000
+
+    local backgroundImage = Instance.new("ImageLabel", cover)
+    backgroundImage.Name = "LagSaverBackgroundImage"
+    backgroundImage.Size = UDim2.new(1, 0, 1, 0)
+    backgroundImage.Position = UDim2.new(0, 0, 0, 0)
+    backgroundImage.BackgroundTransparency = 1
+    backgroundImage.Image = LAGSAVER_BACKGROUND_IMAGE
+    backgroundImage.ImageTransparency = 0.42
+    backgroundImage.ScaleType = Enum.ScaleType.Crop
+    backgroundImage.ZIndex = 10000
+
+    local backgroundDim = Instance.new("Frame", cover)
+    backgroundDim.Name = "LagSaverBackgroundDim"
+    backgroundDim.Size = UDim2.new(1, 0, 1, 0)
+    backgroundDim.BackgroundColor3 = Color3.fromRGB(3, 5, 10)
+    backgroundDim.BackgroundTransparency = 0.34
+    backgroundDim.BorderSizePixel = 0
+    backgroundDim.ZIndex = 10000
 
     local topLine = Instance.new("Frame", cover)
     topLine.Size = UDim2.new(1, 0, 0, 3)
@@ -545,7 +578,7 @@ local function ShowScreenCover()
     offButton.Size = UDim2.new(0, 180, 0, 34)
     offButton.Position = UDim2.new(1, -200, 0, 18)
     offButton.BackgroundColor3 = Color3.fromRGB(10, 12, 20)
-    offButton.Text = "DISABLE LAG SAVER"
+    offButton.Text = "EXIT"
     offButton.TextColor3 = Color3.fromRGB(0, 255, 255)
     offButton.Font = Enum.Font.GothamBold
     offButton.TextSize = 12

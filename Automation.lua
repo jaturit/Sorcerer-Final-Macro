@@ -2,6 +2,7 @@
 -- Module 6 of 12 | Sorcerer Final Macro - Modular Edition
 
 local Player = _G._Player
+local HttpService = _G._Services.HttpService
 local ReplicatedStorage = _G._Services.ReplicatedStorage
 local SaveConfig = _G.SaveConfig
 local RandomDelay = _G.RandomDelay
@@ -209,6 +210,11 @@ local function SendGameEndNotification()
         Rewards = rewardLines,
         UpdatedAt = os.date("%H:%M:%S")
     }
+    pcall(function()
+        if _G._LAST_RESULT_FILE then
+            writefile(_G._LAST_RESULT_FILE, HttpService:JSONEncode(_G.LastGameResult))
+        end
+    end)
     _G.LagSaverStatus = isVictory and "Run completed: VICTORY" or "Run ended: GAME OVER"
 
     if hasWebhook then
