@@ -358,54 +358,60 @@ local function ShowScreenCover()
     topLine.ZIndex = 10001
 
     local title = Instance.new("TextLabel", cover)
-    title.Size = UDim2.new(1, -40, 0, 46)
-    title.Position = UDim2.new(0, 24, 0, 18)
+    title.Size = UDim2.new(1, -240, 0, 34)
+    title.Position = UDim2.new(0, 34, 0, 14)
     title.BackgroundTransparency = 1
     title.Text = "LAG SAVER // BOT STATUS"
     title.TextColor3 = Color3.fromRGB(0, 255, 255)
     title.Font = Enum.Font.GothamBlack
-    title.TextSize = 24
+    title.TextSize = 18
     title.TextXAlignment = Enum.TextXAlignment.Left
-    title.ZIndex = 10001
+    title.ZIndex = 10003
     local titleGlow = Instance.new("UIStroke", title)
     titleGlow.Color = Color3.fromRGB(0, 180, 255)
     titleGlow.Thickness = 1
     titleGlow.Transparency = 0.25
 
     local subtitle = Instance.new("TextLabel", cover)
-    subtitle.Size = UDim2.new(1, -40, 0, 24)
-    subtitle.Position = UDim2.new(0, 26, 0, 60)
+    subtitle.Size = UDim2.new(1, -70, 0, 20)
+    subtitle.Position = UDim2.new(0, 34, 0, 44)
     subtitle.BackgroundTransparency = 1
     subtitle.Text = "Rendering is covered. Macro logic continues in the background."
     subtitle.TextColor3 = Color3.fromRGB(190, 210, 220)
     subtitle.Font = Enum.Font.GothamMedium
     subtitle.TextSize = 12
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
-    subtitle.ZIndex = 10001
+    subtitle.ZIndex = 10003
 
     local panel = Instance.new("Frame", cover)
-    panel.Size = UDim2.new(0, 620, 0, 360)
-    panel.Position = UDim2.new(0.5, -310, 0.5, -180)
+    panel.AnchorPoint = Vector2.new(0.5, 0.5)
+    panel.Size = UDim2.new(0.78, 0, 0.86, 0)
+    panel.Position = UDim2.new(0.5, 0, 0.5, 0)
     panel.BackgroundColor3 = Color3.fromRGB(8, 10, 18)
     panel.BackgroundTransparency = 0.08
     panel.BorderSizePixel = 0
     panel.ZIndex = 10001
     Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
+    local panelSize = Instance.new("UISizeConstraint", panel)
+    panelSize.MinSize = Vector2.new(460, 360)
+    panelSize.MaxSize = Vector2.new(860, 470)
     local panelStroke = Instance.new("UIStroke", panel)
     panelStroke.Color = Color3.fromRGB(0, 255, 255)
     panelStroke.Thickness = 2
     panelStroke.Transparency = 0.2
+    title.Parent = panel
+    subtitle.Parent = panel
 
     local accent = Instance.new("Frame", panel)
-    accent.Size = UDim2.new(0, 5, 1, -24)
-    accent.Position = UDim2.new(0, 14, 0, 12)
+    accent.Size = UDim2.new(0, 5, 1, -28)
+    accent.Position = UDim2.new(0, 18, 0, 14)
     accent.BackgroundColor3 = Color3.fromRGB(255, 235, 59)
     accent.BorderSizePixel = 0
     accent.ZIndex = 10002
 
     local statusLabel = Instance.new("TextLabel", panel)
-    statusLabel.Size = UDim2.new(1, -60, 0, 34)
-    statusLabel.Position = UDim2.new(0, 34, 0, 24)
+    statusLabel.Size = UDim2.new(1, -60, 0, 30)
+    statusLabel.Position = UDim2.new(0, 34, 0, 76)
     statusLabel.BackgroundTransparency = 1
     statusLabel.TextColor3 = Color3.fromRGB(0, 255, 140)
     statusLabel.Font = Enum.Font.GothamBold
@@ -415,7 +421,7 @@ local function ShowScreenCover()
 
     local macroLabel = Instance.new("TextLabel", panel)
     macroLabel.Size = UDim2.new(1, -60, 0, 24)
-    macroLabel.Position = UDim2.new(0, 34, 0, 64)
+    macroLabel.Position = UDim2.new(0, 34, 0, 110)
     macroLabel.BackgroundTransparency = 1
     macroLabel.TextColor3 = Color3.fromRGB(235, 245, 255)
     macroLabel.Font = Enum.Font.GothamMedium
@@ -425,7 +431,7 @@ local function ShowScreenCover()
 
     local waveLabel = Instance.new("TextLabel", panel)
     waveLabel.Size = UDim2.new(1, -60, 0, 24)
-    waveLabel.Position = UDim2.new(0, 34, 0, 92)
+    waveLabel.Position = UDim2.new(0, 34, 0, 136)
     waveLabel.BackgroundTransparency = 1
     waveLabel.TextColor3 = Color3.fromRGB(255, 235, 59)
     waveLabel.Font = Enum.Font.GothamMedium
@@ -435,7 +441,7 @@ local function ShowScreenCover()
 
     local dashboardTitle = Instance.new("TextLabel", panel)
     dashboardTitle.Size = UDim2.new(1, -60, 0, 22)
-    dashboardTitle.Position = UDim2.new(0, 34, 0, 128)
+    dashboardTitle.Position = UDim2.new(0, 34, 0, 170)
     dashboardTitle.BackgroundTransparency = 1
     dashboardTitle.Text = "DASHBOARD CACHE"
     dashboardTitle.TextColor3 = Color3.fromRGB(0, 255, 255)
@@ -445,8 +451,8 @@ local function ShowScreenCover()
     dashboardTitle.ZIndex = 10002
 
     local dashboardLabel = Instance.new("TextLabel", panel)
-    dashboardLabel.Size = UDim2.new(1, -60, 0, 48)
-    dashboardLabel.Position = UDim2.new(0, 34, 0, 152)
+    dashboardLabel.Size = UDim2.new(1, -60, 0, 44)
+    dashboardLabel.Position = UDim2.new(0, 34, 0, 194)
     dashboardLabel.BackgroundColor3 = Color3.fromRGB(12, 15, 24)
     dashboardLabel.BackgroundTransparency = 0.15
     dashboardLabel.TextColor3 = Color3.fromRGB(230, 240, 245)
@@ -463,7 +469,7 @@ local function ShowScreenCover()
 
     local resultTitle = Instance.new("TextLabel", panel)
     resultTitle.Size = UDim2.new(1, -60, 0, 22)
-    resultTitle.Position = UDim2.new(0, 34, 0, 214)
+    resultTitle.Position = UDim2.new(0, 34, 0, 252)
     resultTitle.BackgroundTransparency = 1
     resultTitle.Text = "LAST RUN RESULT"
     resultTitle.TextColor3 = Color3.fromRGB(255, 20, 92)
@@ -473,8 +479,8 @@ local function ShowScreenCover()
     resultTitle.ZIndex = 10002
 
     local resultLabel = Instance.new("TextLabel", panel)
-    resultLabel.Size = UDim2.new(1, -60, 0, 96)
-    resultLabel.Position = UDim2.new(0, 34, 0, 238)
+    resultLabel.Size = UDim2.new(1, -60, 1, -304)
+    resultLabel.Position = UDim2.new(0, 34, 0, 276)
     resultLabel.BackgroundColor3 = Color3.fromRGB(12, 15, 24)
     resultLabel.BackgroundTransparency = 0.15
     resultLabel.TextColor3 = Color3.fromRGB(230, 240, 245)
@@ -490,16 +496,16 @@ local function ShowScreenCover()
     resultPad.PaddingLeft = UDim.new(0, 10)
     resultPad.PaddingRight = UDim.new(0, 10)
 
-    local offButton = Instance.new("TextButton", cover)
+    local offButton = Instance.new("TextButton", panel)
     offButton.Name = "DisableLagSaver"
-    offButton.Size = UDim2.new(0, 190, 0, 40)
-    offButton.Position = UDim2.new(1, -210, 0, 18)
+    offButton.Size = UDim2.new(0, 180, 0, 34)
+    offButton.Position = UDim2.new(1, -200, 0, 18)
     offButton.BackgroundColor3 = Color3.fromRGB(10, 12, 20)
     offButton.Text = "DISABLE LAG SAVER"
     offButton.TextColor3 = Color3.fromRGB(0, 255, 255)
     offButton.Font = Enum.Font.GothamBold
     offButton.TextSize = 12
-    offButton.ZIndex = 10001
+    offButton.ZIndex = 10003
     Instance.new("UICorner", offButton).CornerRadius = UDim.new(0, 8)
     local offStroke = Instance.new("UIStroke", offButton)
     offStroke.Color = Color3.fromRGB(0, 255, 255)
