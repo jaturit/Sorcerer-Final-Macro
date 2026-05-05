@@ -24,6 +24,7 @@ local CONFIG_FILE = FOLDER.."/settings.json"
 local MAP_CONFIG_FILE = FOLDER.."/map_macros.json"
 local GOODFARM_STATE_FILE = FOLDER.."/goodfarm_state.json"
 local LAGSAVER_STATE_FILE = FOLDER.."/lag_saver_state.json"
+local CULLING_POINTS_FILE = FOLDER.."/culling_points.txt"
 
 pcall(function()
     if not isfolder(FOLDER) then makefolder(FOLDER) end
@@ -50,6 +51,7 @@ _G._AUTH_FILE = AUTH_FILE
 _G._CONFIG_FILE = CONFIG_FILE
 _G._MAP_CONFIG_FILE = MAP_CONFIG_FILE
 _G._LAGSAVER_STATE_FILE = LAGSAVER_STATE_FILE
+_G._CULLING_POINTS_FILE = CULLING_POINTS_FILE
 
 -- ═══════════════════════════════════════════════════════
 -- 🎯 GLOBAL VARIABLES
@@ -325,6 +327,38 @@ local function GetLagSaverDashboardText()
     return text
 end
 
+local function GetCullingPointsText()
+    local points = nil
+    pcall(function()
+        local cg = PlayerGui:FindFirstChild("CullingGames")
+        if cg then
+            local tp = cg:FindFirstChild("Teleport")
+            if tp and tp.Visible then
+                for _, v in pairs(tp:GetChildren()) do
+                    if v:IsA("TextLabel") and v.Text and v.Text ~= "" then
+                        local pts = v.Text:match("Culling Points:%s*(%d+)") or v.Text:match("^(%d+)$")
+                        if pts then
+                            points = pts
+                            if writefile then
+                                writefile(CULLING_POINTS_FILE, pts)
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    if not points then
+        pcall(function()
+            if isfile and isfile(CULLING_POINTS_FILE) then
+                points = readfile(CULLING_POINTS_FILE)
+            end
+        end)
+    end
+    return points or "---"
+end
+
 local function GetLagSaverResultText()
     local result = _G.LastGameResult
     if type(result) == "table" and result.Text and result.Text ~= "" then
@@ -439,9 +473,19 @@ local function ShowScreenCover()
     waveLabel.TextXAlignment = Enum.TextXAlignment.Left
     waveLabel.ZIndex = 10002
 
+    local cullingLabel = Instance.new("TextLabel", panel)
+    cullingLabel.Size = UDim2.new(1, -60, 0, 24)
+    cullingLabel.Position = UDim2.new(0, 34, 0, 162)
+    cullingLabel.BackgroundTransparency = 1
+    cullingLabel.TextColor3 = Color3.fromRGB(255, 208, 64)
+    cullingLabel.Font = Enum.Font.GothamBold
+    cullingLabel.TextSize = 13
+    cullingLabel.TextXAlignment = Enum.TextXAlignment.Left
+    cullingLabel.ZIndex = 10002
+
     local dashboardTitle = Instance.new("TextLabel", panel)
     dashboardTitle.Size = UDim2.new(1, -60, 0, 22)
-    dashboardTitle.Position = UDim2.new(0, 34, 0, 170)
+    dashboardTitle.Position = UDim2.new(0, 34, 0, 194)
     dashboardTitle.BackgroundTransparency = 1
     dashboardTitle.Text = "DASHBOARD CACHE"
     dashboardTitle.TextColor3 = Color3.fromRGB(0, 255, 255)
@@ -452,7 +496,7 @@ local function ShowScreenCover()
 
     local dashboardLabel = Instance.new("TextLabel", panel)
     dashboardLabel.Size = UDim2.new(1, -60, 0, 44)
-    dashboardLabel.Position = UDim2.new(0, 34, 0, 194)
+    dashboardLabel.Position = UDim2.new(0, 34, 0, 218)
     dashboardLabel.BackgroundColor3 = Color3.fromRGB(12, 15, 24)
     dashboardLabel.BackgroundTransparency = 0.15
     dashboardLabel.TextColor3 = Color3.fromRGB(230, 240, 245)
@@ -469,7 +513,7 @@ local function ShowScreenCover()
 
     local resultTitle = Instance.new("TextLabel", panel)
     resultTitle.Size = UDim2.new(1, -60, 0, 22)
-    resultTitle.Position = UDim2.new(0, 34, 0, 252)
+    resultTitle.Position = UDim2.new(0, 34, 0, 274)
     resultTitle.BackgroundTransparency = 1
     resultTitle.Text = "LAST RUN RESULT"
     resultTitle.TextColor3 = Color3.fromRGB(255, 20, 92)
@@ -479,8 +523,8 @@ local function ShowScreenCover()
     resultTitle.ZIndex = 10002
 
     local resultLabel = Instance.new("TextLabel", panel)
-    resultLabel.Size = UDim2.new(1, -60, 1, -304)
-    resultLabel.Position = UDim2.new(0, 34, 0, 276)
+    resultLabel.Size = UDim2.new(1, -60, 1, -326)
+    resultLabel.Position = UDim2.new(0, 34, 0, 298)
     resultLabel.BackgroundColor3 = Color3.fromRGB(12, 15, 24)
     resultLabel.BackgroundTransparency = 0.15
     resultLabel.TextColor3 = Color3.fromRGB(230, 240, 245)
@@ -536,6 +580,7 @@ local function ShowScreenCover()
             statusLabel.Text = "STATUS: " .. GetLagSaverStatusText()
             macroLabel.Text = "MACRO: " .. tostring(_G.SelectedFile or "None") .. "   |   CASINO: " .. tostring(_G.CasinoSelectedFile or "None")
             waveLabel.Text = "WAVE: " .. tostring(_G._CurrentWave or 0) .. "   |   FPS CAP: " .. tostring(_G.LowPerformanceFPS or 15)
+            cullingLabel.Text = "CULLING POINTS: " .. GetCullingPointsText()
             dashboardLabel.Text = GetLagSaverDashboardText()
             resultLabel.Text = GetLagSaverResultText()
             task.wait(1)

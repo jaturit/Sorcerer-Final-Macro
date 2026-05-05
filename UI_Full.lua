@@ -315,6 +315,23 @@ local function installCyberFrameEffects(MainFrame, MainStroke)
     end
 end
 
+local function installMobileScale(MainFrame)
+    if not UserInputService.TouchEnabled then return end
+    local scale = Instance.new("UIScale", MainFrame)
+    scale.Name = "MobileUIScale"
+
+    local function updateScale()
+        local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+        local target = math.min(viewport.X / 1200, viewport.Y / 650)
+        scale.Scale = math.clamp(target, 0.65, 0.86)
+    end
+
+    updateScale()
+    pcall(function()
+        workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+    end)
+end
+
 -- ═══════════════════════════════════════════════════════
 -- 🖥️ MAIN UI CREATION (Full: all tabs)
 -- ═══════════════════════════════════════════════════════
@@ -447,12 +464,14 @@ local function LoadMainUI()
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 620, 0, 380)
-    MainFrame.Position = UDim2.new(0.5, -310, 0.5, -190)
+    MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     MainFrame.BackgroundColor3 = Colors.Black
     MainFrame.BorderSizePixel = 0
     MainFrame.Visible = false 
     MainFrame.ZIndex = 1
     MainFrame.Parent = ScreenGui
+    installMobileScale(MainFrame)
 
     local MainCorner = Instance.new("UICorner", MainFrame)
     MainCorner.CornerRadius = UDim.new(0, 12)
