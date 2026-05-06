@@ -307,7 +307,7 @@ local function GetAssetThumbnailId(value)
     value = tostring(value or "")
     local id = value:match("rbxassetid://(%d+)") or value:match("id=(%d+)") or value:match("^(%d+)$")
     if not id then return "" end
-    return "rbxthumb://type=Asset&id=" .. id .. "&w=768&h=432"
+    return "rbxthumb://type=Asset&id=" .. id .. "&w=720&h=720"
 end
 
 local function GetLagSaverStatusText()
@@ -421,20 +421,24 @@ local function ShowScreenCover()
 
     local backgroundImage = Instance.new("ImageLabel", cover)
     backgroundImage.Name = "LagSaverBackgroundImage"
-    backgroundImage.Size = UDim2.new(1, 0, 1, 0)
-    backgroundImage.Position = UDim2.new(0, 0, 0, 0)
+    backgroundImage.AnchorPoint = Vector2.new(0.5, 0.5)
+    backgroundImage.Size = UDim2.new(0.82, 0, 0.82, 0)
+    backgroundImage.Position = UDim2.new(0.5, 0, 0.5, 0)
     backgroundImage.BackgroundTransparency = 1
     backgroundImage.Image = NormalizeImageId(_G.LagSaverBackgroundImage or LAGSAVER_BACKGROUND_IMAGE)
-    backgroundImage.ImageTransparency = 0.18
-    backgroundImage.ScaleType = Enum.ScaleType.Crop
+    backgroundImage.ImageTransparency = 0.03
+    backgroundImage.ScaleType = Enum.ScaleType.Fit
     backgroundImage.Visible = backgroundImage.Image ~= ""
     backgroundImage.ZIndex = 10000
+    pcall(function()
+        backgroundImage.ResampleMode = Enum.ResamplerMode.Default
+    end)
 
     local backgroundDim = Instance.new("Frame", cover)
     backgroundDim.Name = "LagSaverBackgroundDim"
     backgroundDim.Size = UDim2.new(1, 0, 1, 0)
     backgroundDim.BackgroundColor3 = Color3.fromRGB(3, 5, 10)
-    backgroundDim.BackgroundTransparency = 0.48
+    backgroundDim.BackgroundTransparency = 0.64
     backgroundDim.BorderSizePixel = 0
     backgroundDim.ZIndex = 10001
 

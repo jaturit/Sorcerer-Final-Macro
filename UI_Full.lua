@@ -322,8 +322,13 @@ local function installMobileScale(MainFrame)
 
     local function updateScale()
         local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
-        local target = math.min(viewport.X / 1200, viewport.Y / 650)
-        scale.Scale = math.clamp(target, 0.65, 0.86)
+        local fitScale = math.min((viewport.X - 24) / 620, (viewport.Y - 24) / 380)
+        local target = math.min(fitScale * 0.96, 0.98)
+        if fitScale < 0.78 then
+            scale.Scale = math.max(target, math.min(fitScale, 0.58))
+        else
+            scale.Scale = math.clamp(target, 0.78, 0.98)
+        end
     end
 
     updateScale()
@@ -616,7 +621,7 @@ local function LoadMainUI()
     PageLayout.EasingDirection = Enum.EasingDirection.Out
     PageLayout.TweenTime = 0.4
     PageLayout.ScrollWheelInputEnabled = false
-    local scrollEndPadding = UserInputService.TouchEnabled and 115 or 36
+    local scrollEndPadding = UserInputService.TouchEnabled and 230 or 48
 
     -- Helper Functions
     local function createPage(name)
@@ -642,7 +647,7 @@ local function LoadMainUI()
         pad.PaddingBottom = UDim.new(0, 10)
         local function updateCanvasSize()
             if not p.Parent then return end
-            p.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + scrollEndPadding)
+            p.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + pad.PaddingTop.Offset + pad.PaddingBottom.Offset + scrollEndPadding)
         end
         layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvasSize)
         p:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvasSize)
