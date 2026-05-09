@@ -2560,6 +2560,23 @@ local function LoadMainUI()
         if raw == "" then return "" end
         return OrbRewardAliases[cleanOrbKey(raw)] or raw
     end
+    local function findKnownOrbReward(text)
+        local key = cleanOrbKey(text)
+        if key == "" then return "" end
+        if OrbRewardAliases[key] then return OrbRewardAliases[key] end
+        for aliasKey, rewardName in pairs(OrbRewardAliases) do
+            if key == aliasKey or key:find(aliasKey, 1, true) or aliasKey:find(key, 1, true) then
+                return rewardName
+            end
+        end
+        for _, rewardName in ipairs(OrbRewardList) do
+            local rewardKey = cleanOrbKey(rewardName)
+            if key == rewardKey or key:find(rewardKey, 1, true) or rewardKey:find(key, 1, true) then
+                return rewardName
+            end
+        end
+        return ""
+    end
     local function NormalizeOrbPriority()
         local normalized = {}
         local seen = {}
@@ -2669,24 +2686,62 @@ local function LoadMainUI()
     end
     local function getOrbCardReward(card)
         if not card then return "" end
-        local transVal = card:FindFirstChild("TransVal")
-        if transVal then
-            local ok, value = pcall(function() return transVal.Value end)
-            if ok and value ~= nil and tostring(value) ~= "" then
-                return canonicalOrbName(value)
+        local function scanValue(obj, allowName)
+            if not obj then return "" end
+
+            if allowName then
+                local byName = findKnownOrbReward(obj.Name)
+                if byName ~= "" then return byName end
             end
-            if transVal:IsA("TextLabel") or transVal:IsA("TextButton") then
-                if transVal.Text and transVal.Text ~= "" then
-                    return canonicalOrbName(transVal.Text)
+
+            local okValue, value = pcall(function() return obj.Value end)
+            if okValue and value ~= nil then
+                local byValue = findKnownOrbReward(value)
+                if byValue ~= "" then return byValue end
+            end
+
+            local okText, text = pcall(function() return obj.Text end)
+            if okText and text ~= nil then
+                local byText = findKnownOrbReward(text)
+                if byText ~= "" then return byText end
+            end
+
+            return ""
+        end
+
+        local transVal = card:FindFirstChild("TransVal")
+        local rewardName = scanValue(transVal, true)
+        if rewardName ~= "" then return rewardName end
+
+        if transVal then
+            for _, obj in ipairs(transVal:GetDescendants()) do
+                rewardName = scanValue(obj, true)
+                if rewardName ~= "" then return rewardName end
+            end
+        end
+
+        for _, obj in ipairs(card:GetDescendants()) do
+            rewardName = scanValue(obj, false)
+            if rewardName ~= "" then return rewardName end
+        end
+
+        local btn = card:FindFirstChild("Btn")
+        local title = btn and btn:FindFirstChild("Title")
+        rewardName = scanValue(title, false)
+        if rewardName ~= "" then return rewardName end
+
+        return ""
+    end
+    local function selectFirstAvailableOrbCard(orbsFrame)
+        for ci = 1, 3 do
+            local card = orbsFrame:FindFirstChild(tostring(ci))
+            if card and card:FindFirstChild("Btn") then
+                if activateOrbButton(card.Btn) then
+                    return ci
                 end
             end
         end
-        local btn = card:FindFirstChild("Btn")
-        local title = btn and btn:FindFirstChild("Title")
-        if title and title.Text and title.Text ~= "" then
-            return canonicalOrbName(title.Text)
-        end
-        return ""
+        return 0
     end
     local function orbRewardMatches(cardReward, wantedReward)
         local cardKey = cleanOrbKey(canonicalOrbName(cardReward))
@@ -2708,6 +2763,13 @@ local function LoadMainUI()
             task.wait(0.03)
         until not _AutoBuyOrb
         return cardRewards
+    end
+    local function formatOrbRewards(cardRewards)
+        local parts = {}
+        for ci = 1, 3 do
+            parts[ci] = "#" .. ci .. "=" .. ((cardRewards and cardRewards[ci] ~= "" and cardRewards[ci]) or "?")
+        end
+        return table.concat(parts, ", ")
     end
 
     orbToggle.MouseButton1Click:Connect(function()
@@ -2774,10 +2836,12 @@ local function LoadMainUI()
                             end
                             if not selected then
                                 pcall(function()
-                                    local c1 = orbsFrame:FindFirstChild("1")
-                                    if c1 and c1:FindFirstChild("Btn") then activateOrbButton(c1.Btn) end
+                                    local fallbackIndex = selectFirstAvailableOrbCard(orbsFrame)
+                                    if fallbackIndex > 0 then
+                                        orbStatus.Text = "⚠️ รอบ " .. round .. "/10 ไม่พบในลำดับ → กดใบ " .. fallbackIndex
+                                        print("🔮 รอบ " .. round .. "/10 ไม่พบ priority (" .. formatOrbRewards(cardRewards) .. ") → กดใบ " .. fallbackIndex)
+                                    end
                                 end)
-                                orbStatus.Text = "⚠️ รอบ " .. round .. "/10 กดใบ 1"
                             end
                             pickCount = pickCount + 1
 
