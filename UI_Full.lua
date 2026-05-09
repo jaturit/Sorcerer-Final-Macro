@@ -2709,8 +2709,13 @@ local function LoadMainUI()
             return ""
         end
 
+        local btn = card:FindFirstChild("Btn")
+        local title = btn and btn:FindFirstChild("Title")
+        local rewardName = scanValue(title, false)
+        if rewardName ~= "" then return rewardName end
+
         local transVal = card:FindFirstChild("TransVal")
-        local rewardName = scanValue(transVal, true)
+        rewardName = scanValue(transVal, true)
         if rewardName ~= "" then return rewardName end
 
         if transVal then
@@ -2724,11 +2729,6 @@ local function LoadMainUI()
             rewardName = scanValue(obj, false)
             if rewardName ~= "" then return rewardName end
         end
-
-        local btn = card:FindFirstChild("Btn")
-        local title = btn and btn:FindFirstChild("Title")
-        rewardName = scanValue(title, false)
-        if rewardName ~= "" then return rewardName end
 
         return ""
     end
