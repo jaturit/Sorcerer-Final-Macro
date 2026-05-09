@@ -2536,13 +2536,56 @@ local function LoadMainUI()
     local OrbPriority = {}
     local _AutoBuyOrb = false
     local orbPriorityFile = FOLDER .. "/orb_priority.json"
+    local OrbRewardList = {"Cursed Scroll", "Cursed Crystals", "Gems", "Coins", "Unique Fragment"}
+    local OrbRewardAliases = {
+        cursedscroll = "Cursed Scroll",
+        cursedcrystal = "Cursed Crystals",
+        cursedcrystals = "Cursed Crystals",
+        gem = "Gems",
+        gems = "Gems",
+        coin = "Coins",
+        coins = "Coins",
+        uniquefragment = "Unique Fragment",
+        uniquefragments = "Unique Fragment",
+    }
+    local OrbRewardLookup = {}
+    for _, rewardName in ipairs(OrbRewardList) do
+        OrbRewardLookup[rewardName] = true
+    end
+    local function cleanOrbKey(text)
+        return tostring(text or ""):lower():gsub("[^%w]", "")
+    end
+    local function canonicalOrbName(text)
+        local raw = tostring(text or "")
+        if raw == "" then return "" end
+        return OrbRewardAliases[cleanOrbKey(raw)] or raw
+    end
+    local function NormalizeOrbPriority()
+        local normalized = {}
+        local seen = {}
+        for _, rewardName in ipairs(OrbPriority) do
+            local canonical = canonicalOrbName(rewardName)
+            if OrbRewardLookup[canonical] and not seen[canonical] then
+                table.insert(normalized, canonical)
+                seen[canonical] = true
+            end
+        end
+        for _, rewardName in ipairs(OrbRewardList) do
+            if not seen[rewardName] then
+                table.insert(normalized, rewardName)
+                seen[rewardName] = true
+            end
+        end
+        OrbPriority = normalized
+    end
     pcall(function()
         if isfile(orbPriorityFile) then OrbPriority = HttpService:JSONDecode(readfile(orbPriorityFile)) end
     end)
-    if #OrbPriority == 0 then OrbPriority = {"Cursed Scroll", "Cursed Crystals", "Gems", "Coins"} end
+    NormalizeOrbPriority()
     local function SaveOrbPri()
         pcall(function() writefile(orbPriorityFile, HttpService:JSONEncode(OrbPriority)) end)
     end
+    SaveOrbPri()
 
     local orbStatus = Instance.new("TextLabel", OrbBox)
     orbStatus.Text = "ตั้งลำดับรางวัล → เปิด Auto"
@@ -2573,7 +2616,7 @@ local function LoadMainUI()
             end
         end
     end
-    for i = 1, 4 do
+    for i = 1, #OrbRewardList do
         local row = Instance.new("TextButton", OrbBox)
         row.Size = UDim2.new(1, -25, 0, 28)
         row.BackgroundColor3 = Colors.DarkGray
@@ -2614,21 +2657,57 @@ local function LoadMainUI()
     Instance.new("UICorner", orbToggle).CornerRadius = UDim.new(0, 8)
 
     local orbBuyCount = 0
-    local function forceClickBtn(btn)
+    local function activateOrbButton(btn)
+        local activated = false
         if type(firesignal) == "function" then
-            pcall(function() firesignal(btn.MouseButton1Click) end)
-            pcall(function() firesignal(btn.Activated) end)
-            pcall(function() firesignal(btn.TouchTap) end)
-            pcall(function() firesignal(btn.MouseButton1Up) end)
+            activated = pcall(function() firesignal(btn.MouseButton1Click) end) or activated
+            activated = pcall(function() firesignal(btn.Activated) end) or activated
+            activated = pcall(function() firesignal(btn.MouseButton1Up) end) or activated
         end
-        pcall(function() game:GetService("VirtualUser"):ClickButton(btn) end)
-        pcall(function()
-            local VIM = game:GetService("VirtualInputManager")
-            local pos = btn.AbsolutePosition + btn.AbsoluteSize / 2
-            VIM:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
-            task.wait(0.1)
-            VIM:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
-        end)
+        activated = pcall(function() btn:Activate() end) or activated
+        return activated
+    end
+    local function getOrbCardReward(card)
+        if not card then return "" end
+        local transVal = card:FindFirstChild("TransVal")
+        if transVal then
+            local ok, value = pcall(function() return transVal.Value end)
+            if ok and value ~= nil and tostring(value) ~= "" then
+                return canonicalOrbName(value)
+            end
+            if transVal:IsA("TextLabel") or transVal:IsA("TextButton") then
+                if transVal.Text and transVal.Text ~= "" then
+                    return canonicalOrbName(transVal.Text)
+                end
+            end
+        end
+        local btn = card:FindFirstChild("Btn")
+        local title = btn and btn:FindFirstChild("Title")
+        if title and title.Text and title.Text ~= "" then
+            return canonicalOrbName(title.Text)
+        end
+        return ""
+    end
+    local function orbRewardMatches(cardReward, wantedReward)
+        local cardKey = cleanOrbKey(canonicalOrbName(cardReward))
+        local wantedKey = cleanOrbKey(canonicalOrbName(wantedReward))
+        return cardKey ~= "" and wantedKey ~= "" and (cardKey == wantedKey or cardKey:find(wantedKey, 1, true) or wantedKey:find(cardKey, 1, true))
+    end
+    local function waitOrbRewards(orbsFrame)
+        local cardRewards = {}
+        local deadline = os.clock() + 1
+        repeat
+            local readyCount = 0
+            for ci = 1, 3 do
+                local card = orbsFrame:FindFirstChild(tostring(ci))
+                local rewardName = getOrbCardReward(card)
+                cardRewards[ci] = rewardName
+                if rewardName ~= "" then readyCount = readyCount + 1 end
+            end
+            if readyCount >= 3 or os.clock() >= deadline then break end
+            task.wait(0.03)
+        until not _AutoBuyOrb
+        return cardRewards
     end
 
     orbToggle.MouseButton1Click:Connect(function()
@@ -2657,7 +2736,7 @@ local function LoadMainUI()
 
                         -- รอหน้าเลือกรางวัลเด้งขึ้นมา
                         local orbsFrame = nil
-                        for waitI = 1, 50 do
+                        for waitI = 1, 150 do
                             if not _AutoBuyOrb then break end
                             pcall(function()
                                 local orbsUI = Player.PlayerGui:FindFirstChild("Orbs")
@@ -2667,29 +2746,28 @@ local function LoadMainUI()
                                 end
                             end)
                             if orbsFrame then break end
-                            task.wait(0.15)
+                            task.wait(0.05)
                         end
                         if not _AutoBuyOrb then break end
 
                         if orbsFrame then
-                            task.wait(0.5) -- รออนิเมชั่น
+                            local cardRewards = waitOrbRewards(orbsFrame)
 
                             -- เลือกรางวัลตาม priority
                             local selected = false
                             for _, wantedItem in ipairs(OrbPriority) do
                                 if selected then break end
                                 for ci = 1, 3 do
+                                    if selected then break end
                                     pcall(function()
                                         local card = orbsFrame:FindFirstChild(tostring(ci))
-                                        if card and card:FindFirstChild("Btn") then
-                                            local title = card.Btn:FindFirstChild("Title")
-                                            if title and title.Text == wantedItem then
-                                                forceClickBtn(card.Btn)
-                                                orbStatus.Text = "✅ รอบ " .. round .. "/10 → " .. wantedItem
-                                                orbStatus.TextColor3 = Colors.Green
-                                                print("🔮 รอบ " .. round .. "/10 → " .. wantedItem)
-                                                selected = true
-                                            end
+                                        local rewardName = cardRewards[ci] or getOrbCardReward(card)
+                                        if card and card:FindFirstChild("Btn") and orbRewardMatches(rewardName, wantedItem) then
+                                            activateOrbButton(card.Btn)
+                                            orbStatus.Text = "✅ รอบ " .. round .. "/10 → " .. wantedItem
+                                            orbStatus.TextColor3 = Colors.Green
+                                            print("🔮 รอบ " .. round .. "/10 → " .. wantedItem .. " (#" .. ci .. ")")
+                                            selected = true
                                         end
                                     end)
                                 end
@@ -2697,7 +2775,7 @@ local function LoadMainUI()
                             if not selected then
                                 pcall(function()
                                     local c1 = orbsFrame:FindFirstChild("1")
-                                    if c1 and c1:FindFirstChild("Btn") then forceClickBtn(c1.Btn) end
+                                    if c1 and c1:FindFirstChild("Btn") then activateOrbButton(c1.Btn) end
                                 end)
                                 orbStatus.Text = "⚠️ รอบ " .. round .. "/10 กดใบ 1"
                             end
@@ -2715,9 +2793,9 @@ local function LoadMainUI()
                                     end
                                 end)
                                 if not stillOpen then break end
-                                task.wait(0.15)
+                                task.wait(0.05)
                             end
-                            task.wait(0.3)
+                            task.wait(0.08)
                         else
                             -- หน้าเลือกไม่ขึ้น = หมดรางวัลแล้ว
                             orbStatus.Text = "📦 เลือกครบ " .. pickCount .. "/10 รอบ"
