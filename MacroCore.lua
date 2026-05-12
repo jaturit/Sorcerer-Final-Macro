@@ -48,6 +48,180 @@ local function GetCurrentMoney()
     return money
 end
 
+local AUTO_UPGRADE_SCAN_DELAY = 1
+local AUTO_UPGRADE_TOWER_DELAY = 0.15
+local AUTO_UPGRADE_FAIL_COOLDOWN = 4
+local AutoUpgradeCooldown = setmetatable({}, { __mode = "k" })
+
+local function IsTowerValid(tower)
+    local valid = false
+    pcall(function()
+        if tower and typeof(tower) == "Instance" and tower.Parent then
+            valid = true
+        end
+    end)
+    return valid
+end
+
+local function TowerBelongsToPlayer(tower)
+    if not IsTowerValid(tower) then return false end
+
+    local foundOwnerField = false
+    local belongs = false
+
+    pcall(function()
+        local attrOwner = tower:GetAttribute("Owner") or tower:GetAttribute("OwnerName") or tower:GetAttribute("Player") or tower:GetAttribute("UserId")
+        if attrOwner ~= nil then
+            foundOwnerField = true
+            belongs = attrOwner == Player or attrOwner == Player.Name or attrOwner == Player.UserId or tostring(attrOwner) == tostring(Player.UserId)
+        end
+    end)
+
+    if foundOwnerField then return belongs end
+
+    local owner = tower:FindFirstChild("Owner") or tower:FindFirstChild("OwnerName") or tower:FindFirstChild("Player") or tower:FindFirstChild("UserId")
+    if owner then
+        foundOwnerField = true
+        pcall(function()
+            belongs = owner.Value == Player or owner.Value == Player.Name or owner.Value == Player.UserId or tostring(owner.Value) == tostring(Player.UserId)
+        end)
+    end
+
+    if foundOwnerField then return belongs end
+    return true
+end
+
+local function AddAutoUpgradeTower(list, seen, tower)
+    if IsTowerValid(tower) and TowerBelongsToPlayer(tower) and not seen[tower] then
+        seen[tower] = true
+        table.insert(list, tower)
+    end
+end
+
+local function CollectAutoUpgradeTowers(preferredTowers)
+    local list = {}
+    local seen = {}
+
+    if type(preferredTowers) == "table" then
+        for _, tower in pairs(preferredTowers) do
+            AddAutoUpgradeTower(list, seen, tower)
+        end
+    end
+
+    pcall(function()
+        local towers = workspace:FindFirstChild("Towers")
+        if towers then
+            for _, tower in ipairs(towers:GetChildren()) do
+                AddAutoUpgradeTower(list, seen, tower)
+            end
+        end
+    end)
+
+    return list
+end
+
+local function TryAutoUpgradeTower(tower, upgradeRemote)
+    if not IsTowerValid(tower) then return false, nil end
+
+    local now = tick()
+    if AutoUpgradeCooldown[tower] and now < AutoUpgradeCooldown[tower] then
+        return false, nil
+    end
+
+    local moneyBefore = GetCurrentMoney()
+    local result = nil
+    local ok, err = pcall(function()
+        result = upgradeRemote:InvokeServer(tower)
+    end)
+
+    task.wait(0.2)
+
+    if not ok then
+        AutoUpgradeCooldown[tower] = tick() + AUTO_UPGRADE_FAIL_COOLDOWN
+        print("[AutoUpgrade] Upgrade error: " .. tostring(err))
+        return false, nil
+    end
+
+    local moneyAfter = GetCurrentMoney()
+    if IsTowerValid(result) then
+        AutoUpgradeCooldown[result] = nil
+        print("[AutoUpgrade] Upgraded: " .. tostring(result.Name))
+        return true, result
+    end
+
+    if moneyAfter < moneyBefore then
+        print("[AutoUpgrade] Upgraded: " .. tostring(tower.Name))
+        return true, tower
+    end
+
+    AutoUpgradeCooldown[tower] = tick() + AUTO_UPGRADE_FAIL_COOLDOWN
+    return false, nil
+end
+
+local function AutoUpgradePass(preferredTowers, source)
+    if not _G.AutoUpgrade or _G.AutoUpgradeRunning then return end
+    if _G.MacroRunning or _G.CasinoMacroRunning then return end
+
+    local Functions = ReplicatedStorage:FindFirstChild("Functions")
+    local upgradeRemote = Functions and Functions:FindFirstChild("UpgradeTower")
+    if not upgradeRemote then return end
+
+    local towers = CollectAutoUpgradeTowers(preferredTowers)
+    if #towers == 0 then return end
+
+    _G.AutoUpgradeRunning = true
+    local upgraded = 0
+
+    local passOk, passErr = pcall(function()
+        for _, tower in ipairs(towers) do
+            if not _G.AutoUpgrade or _G.MacroRunning or _G.CasinoMacroRunning then break end
+            local success = TryAutoUpgradeTower(tower, upgradeRemote)
+            if success then
+                upgraded = upgraded + 1
+            end
+            task.wait(AUTO_UPGRADE_TOWER_DELAY)
+        end
+    end)
+
+    if not passOk then
+        print("[AutoUpgrade] Pass error: " .. tostring(passErr))
+    end
+
+    if upgraded > 0 then
+        print("[AutoUpgrade] Pass done (" .. tostring(source or "Auto") .. "): " .. upgraded .. " tower(s)")
+    end
+
+    _G.AutoUpgradeRunning = false
+end
+
+local function StartAutoUpgradeForTowers(towerList, source)
+    _G._AutoUpgradeMacroTowers = towerList
+    _G._AutoUpgradeSource = source or "Macro"
+    _G._AutoUpgradeLastStart = tick()
+
+    if _G.AutoUpgrade then
+        task.spawn(function()
+            task.wait(0.2)
+            AutoUpgradePass(towerList, source)
+        end)
+    end
+end
+
+_G.StartAutoUpgradeForTowers = StartAutoUpgradeForTowers
+
+_G._AutoUpgradeLoopToken = (_G._AutoUpgradeLoopToken or 0) + 1
+local autoUpgradeLoopToken = _G._AutoUpgradeLoopToken
+task.spawn(function()
+    while _G._AutoUpgradeLoopToken == autoUpgradeLoopToken do
+        pcall(function()
+            if _G.AutoUpgrade and not _G.MacroRunning and not _G.CasinoMacroRunning then
+                AutoUpgradePass(_G._AutoUpgradeMacroTowers, _G._AutoUpgradeSource or "Manual")
+            end
+        end)
+        task.wait(AUTO_UPGRADE_SCAN_DELAY)
+    end
+end)
+
 _G.MacroRunning = false
 local function RunMacroLogic()
     if _G.MacroRunning then return end
@@ -102,6 +276,8 @@ local function RunMacroLogic()
     
     -- 🔥 สำคัญ: GameTowers เก็บเฉพาะ Tower ที่วางสำเร็จจริงๆ เท่านั้น
     local GameTowers = {}
+    _G._AutoUpgradeMacroTowers = GameTowers
+    _G._AutoUpgradeSource = "Macro"
     -- index ที่ถูก Sell ไปแล้ว รอให้ Spawn ครั้งถัดไปนำมาใช้ซ้ำ
     local recycledIndexes = {}
     
@@ -512,6 +688,7 @@ local function RunMacroLogic()
         end
         
         _G.MacroRunning = false
+        StartAutoUpgradeForTowers(GameTowers, "Macro")
     end)
 end
 

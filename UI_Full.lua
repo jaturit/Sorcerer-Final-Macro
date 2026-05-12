@@ -1526,6 +1526,14 @@ local function LoadMainUI()
         SaveConfig()
     end)
 
+    _G.SetAutoUpgradeToggle = createToggle(MainBox, "autoอัพเกรต", _G.AutoUpgrade, function(v)
+        _G.AutoUpgrade = v
+        if v and _G.StartAutoUpgradeForTowers then
+            _G.StartAutoUpgradeForTowers(_G._AutoUpgradeMacroTowers, "Manual")
+        end
+        SaveConfig()
+    end)
+
     createToggle(MainBox, "🔄 Auto Replay", _G.AutoReplay, function(v) _G.AutoReplay = v; SaveConfig() end)
     createToggle(MainBox, "⏩ Auto Skip", _G.AutoSkip, function(v) _G.AutoSkip = v; SaveConfig() end)
     

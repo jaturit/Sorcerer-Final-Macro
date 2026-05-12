@@ -67,6 +67,9 @@ _G.FileName = ""
 _G.AutoReplay = false
 _G.AutoSkip = false
 _G.AutoPlay = false
+_G.AutoUpgrade = false
+_G.AutoUpgradeRunning = false
+_G.CasinoMacroRunning = false
 _G.DiscordURL = ""
 _G.AutoJoinCasino = false
 _G.AutoToLobby = false
@@ -797,6 +800,7 @@ local function SaveConfig()
             AutoReplay = _G.AutoReplay,
             AutoSkip = _G.AutoSkip,
             AutoPlay = autoPlayVal,
+            AutoUpgrade = _G.AutoUpgrade,
             SelectedFile = _G.SelectedFile,
             DiscordURL = _G.DiscordURL,
             AutoJoinCasino = _G.AutoJoinCasino,
@@ -846,6 +850,7 @@ local function LoadConfig()
             _G.AutoReplay = data.AutoReplay or false
             _G.AutoSkip = data.AutoSkip or false
             _G.AutoPlay = data.AutoPlay or false
+            _G.AutoUpgrade = data.AutoUpgrade or false
             _G.SelectedFile = data.SelectedFile or "None"
             _G.DiscordURL = data.DiscordURL or ""
             _G.AutoJoinCasino = data.AutoJoinCasino or false
