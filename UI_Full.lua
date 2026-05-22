@@ -1943,6 +1943,9 @@ local function LoadMainUI()
     createToggle(AutoJoinBox, "⚡ Auto Join Raid (GOJO)", _G.AutoJoinRaidGojo, function(v)
         _G.AutoJoinRaidGojo = v; SaveConfig()
     end)
+    createToggle(AutoJoinBox, "🌀 Auto Join GAUNTLET", _G.AutoJoinGauntlet, function(v)
+        _G.AutoJoinGauntlet = v; SaveConfig()
+    end)
 
     -- RAID TICKET SECTION
     local raidTicketBought = 0
@@ -4859,6 +4862,7 @@ local function LoadMainUI()
             _G.AutoCasinoPlay = false
             _G.AutoJoinRaid = false
             _G.AutoJoinRaidGojo = false
+            _G.AutoJoinGauntlet = false
         end
         SaveConfig()
     end)

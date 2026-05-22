@@ -75,6 +75,7 @@ _G.AutoJoinCasino = false
 _G.AutoToLobby = false
 _G.AutoJoinRaid = false
 _G.AutoJoinRaidGojo = false
+_G.AutoJoinGauntlet = false
 _G.AutoCasinoPlay = false
 _G.AutoCasinoEnabled = false  -- ผู้ใช้ต้องการ auto (ไม่ reset ตอน macro จบ)
 _G.CasinoSelectedFile = "None"
@@ -807,6 +808,7 @@ local function SaveConfig()
             AutoToLobby = _G.AutoToLobby,
             AutoJoinRaid = _G.AutoJoinRaid,
             AutoJoinRaidGojo = _G.AutoJoinRaidGojo,
+            AutoJoinGauntlet = _G.AutoJoinGauntlet,
             AutoCasinoPlay = _G.AutoCasinoPlay,
             AutoCasinoEnabled = _G.AutoCasinoEnabled,
             CasinoSelectedFile = _G.CasinoSelectedFile,
@@ -857,6 +859,7 @@ local function LoadConfig()
             _G.AutoToLobby = data.AutoToLobby or false
             _G.AutoJoinRaid = data.AutoJoinRaid or false
             _G.AutoJoinRaidGojo = data.AutoJoinRaidGojo or false
+            _G.AutoJoinGauntlet = data.AutoJoinGauntlet or false
             _G.AutoCasinoPlay = data.AutoCasinoPlay or false
             _G.AutoCasinoEnabled = data.AutoCasinoEnabled or false
             _G.CasinoSelectedFile = data.CasinoSelectedFile or "None"
