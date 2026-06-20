@@ -114,6 +114,364 @@ local function FindNewWorkspaceTower(snapshot, placedCFrame)
     return found
 end
 
+local function LooksLikeUUID(value)
+    return type(value) == "string" and #value >= 20 and value:find("%-") ~= nil
+end
+
+local function NormalizeTowerText(value)
+    value = tostring(value or ""):lower()
+    value = value:gsub("%s+", "")
+    value = value:gsub("[^%w]", "")
+    return value
+end
+
+local function TextMatchesTowerName(text, towerName)
+    local a = NormalizeTowerText(text)
+    local b = NormalizeTowerText(towerName)
+    if #a < 3 or #b < 3 then return false end
+    return a == b or a:find(b, 1, true) ~= nil or b:find(a, 1, true) ~= nil
+end
+
+local function GetTowerPivot(tower)
+    local pivot = nil
+    pcall(function()
+        if tower and typeof(tower) == "Instance" then
+            pivot = tower:GetPivot()
+        end
+    end)
+    return pivot
+end
+
+local function EncodeCFrameValue(cf)
+    if typeof(cf) ~= "CFrame" then return nil end
+    return {Type = "CFrame", Value = {cf:GetComponents()}}
+end
+
+local function GetTowerDisplayName(tower)
+    local displayName = nil
+    pcall(function()
+        if not tower or typeof(tower) ~= "Instance" then return end
+        displayName = tower:GetAttribute("DisplayName")
+            or tower:GetAttribute("TowerName")
+            or tower:GetAttribute("UnitName")
+        if displayName then return end
+
+        local cfg = tower:FindFirstChild("Config")
+        if cfg then
+            for _, key in ipairs({"DisplayName", "TowerName", "UnitName", "Name"}) do
+                local v = cfg:FindFirstChild(key)
+                if v and v.Value ~= nil then
+                    displayName = tostring(v.Value)
+                    return
+                end
+            end
+        end
+        displayName = tower.Name
+    end)
+    return tostring(displayName or "Unknown")
+end
+
+local function TowerBelongsToPlayerOrUnknown(tower)
+    local hasOwnerField = false
+    local belongs = true
+    pcall(function()
+        if not tower or typeof(tower) ~= "Instance" then return end
+        local owner = tower:GetAttribute("Owner")
+            or tower:GetAttribute("OwnerName")
+            or tower:GetAttribute("Player")
+            or tower:GetAttribute("UserId")
+        if owner == nil then
+            for _, key in ipairs({"Owner", "OwnerName", "Player", "UserId"}) do
+                local child = tower:FindFirstChild(key, true)
+                local ok, value = pcall(function()
+                    return child and child.Value or nil
+                end)
+                if ok and value ~= nil then
+                    owner = value
+                    break
+                end
+            end
+        end
+        if owner ~= nil then
+            hasOwnerField = true
+            belongs = owner == Player or owner == Player.Name or owner == Player.UserId or tostring(owner) == tostring(Player.UserId)
+        end
+    end)
+    if hasOwnerField then return belongs end
+    return true
+end
+
+local function GuiNodeHasTowerText(root, towerName)
+    if TextMatchesTowerName(root.Name, towerName) then return true end
+    for _, desc in ipairs(root:GetDescendants()) do
+        if TextMatchesTowerName(desc.Name, towerName) then
+            return true
+        end
+        if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
+            if TextMatchesTowerName(desc.Text, towerName) then
+                return true
+            end
+        end
+        local attrName = nil
+        pcall(function()
+            attrName = desc:GetAttribute("DisplayName") or desc:GetAttribute("TowerName") or desc:GetAttribute("UnitName")
+        end)
+        if attrName and TextMatchesTowerName(attrName, towerName) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ResolveTowerUUIDByDisplayName(displayName)
+    if LooksLikeUUID(displayName) then return displayName end
+
+    local storyTowers = _G.StoryTowers
+    if type(storyTowers) == "table" then
+        for _, data in pairs(storyTowers) do
+            if data and data.ID and data.TowerName and TextMatchesTowerName(data.TowerName, displayName) then
+                return data.ID
+            end
+        end
+    end
+
+    local found = nil
+    pcall(function()
+        local playerGui = Player and Player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+
+        local roots = {}
+        local inv = playerGui:FindFirstChild("Inventory")
+        if inv then table.insert(roots, inv) end
+        local hotbar = playerGui:FindFirstChild("Hotbar") or playerGui:FindFirstChild("GameGui")
+        if hotbar then table.insert(roots, hotbar) end
+        table.insert(roots, playerGui)
+
+        for _, root in ipairs(roots) do
+            if found then break end
+            for _, node in ipairs(root:GetDescendants()) do
+                if LooksLikeUUID(node.Name) and GuiNodeHasTowerText(node, displayName) then
+                    found = node.Name
+                    break
+                end
+            end
+        end
+    end)
+    return found
+end
+
+local ObserverRecord = {
+    Started = false,
+    MoneyObject = nil,
+    TowersFolder = nil,
+    LastMoney = nil,
+    LastDrop = nil,
+    Removed = {},
+}
+
+local function GetMoneySafe()
+    local money = 0
+    pcall(function()
+        money = Player.leaderstats.Money.Value
+    end)
+    return money
+end
+
+local function GetRecentMoneyDrop(maxAge)
+    local drop = ObserverRecord.LastDrop
+    if drop and tick() - drop.Time <= (maxAge or 3) then
+        return drop.Amount
+    end
+    return nil
+end
+
+local function FindPlacedTowerIndexNear(position, radius)
+    local placed = _G._PlacedTowers or {}
+    local bestIndex, bestDist = nil, radius or 4
+    for i, tower in pairs(placed) do
+        local pivot = GetTowerPivot(tower)
+        if pivot and tower.Parent then
+            local dist = (pivot.Position - position).Magnitude
+            if dist < bestDist then
+                bestIndex = i
+                bestDist = dist
+            end
+        end
+    end
+    return bestIndex
+end
+
+local function FindRecentRemovedNear(position)
+    local bestEntry, bestDist = nil, 4
+    for _, entry in ipairs(ObserverRecord.Removed) do
+        if not entry.Used and tick() - entry.Time <= 3 and entry.Position then
+            local dist = (entry.Position - position).Magnitude
+            if dist < bestDist then
+                bestEntry = entry
+                bestDist = dist
+            end
+        end
+    end
+    return bestEntry
+end
+
+local function CleanupRemovedEntries()
+    local fresh = {}
+    for _, entry in ipairs(ObserverRecord.Removed) do
+        if not entry.Used and tick() - entry.Time <= 5 then
+            table.insert(fresh, entry)
+        end
+    end
+    ObserverRecord.Removed = fresh
+end
+
+local function RecordObservedSpawn(tower, pivot, price)
+    local currentData = _G._CurrentData
+    local placedTowers = _G._PlacedTowers
+    if type(currentData) ~= "table" or type(placedTowers) ~= "table" then return end
+    if table.find(placedTowers, tower) then return end
+    if not TowerBelongsToPlayerOrUnknown(tower) then return end
+
+    local displayName = GetTowerDisplayName(tower)
+    local towerUUID = ResolveTowerUUIDByDisplayName(displayName)
+    local action = {
+        Type = "Spawn",
+        Price = price or 0,
+        TowerName = towerUUID or displayName,
+        TowerDisplayName = displayName,
+        CFrame = EncodeCFrameValue(pivot),
+        Observer = true,
+    }
+    if towerUUID then
+        action.Args = DeepEncode({towerUUID, pivot})
+    else
+        print("Observer Record: Spawn captured but UUID not found for " .. tostring(displayName))
+    end
+
+    table.insert(currentData, action)
+    table.insert(placedTowers, tower)
+    print("Observer Record: Spawn | " .. tostring(displayName) .. " | Cost: " .. tostring(price or 0))
+end
+
+local function RecordObservedUpgrade(tower, entry, price)
+    local currentData = _G._CurrentData
+    local placedTowers = _G._PlacedTowers
+    if type(currentData) ~= "table" or type(placedTowers) ~= "table" then return end
+    if table.find(placedTowers, tower) then return end
+
+    entry.Used = true
+    placedTowers[entry.Index] = tower
+    table.insert(currentData, {
+        Type = "Upgrade",
+        Index = entry.Index,
+        Price = price or 0,
+        Observer = true,
+    })
+    print("Observer Record: Upgrade idx " .. tostring(entry.Index) .. " | Cost: " .. tostring(price or 0))
+end
+
+local function AttachMoneyObserver(moneyObject)
+    if ObserverRecord.MoneyObject == moneyObject then return end
+    ObserverRecord.MoneyObject = moneyObject
+    ObserverRecord.LastMoney = moneyObject.Value
+    moneyObject:GetPropertyChangedSignal("Value"):Connect(function()
+        local previous = ObserverRecord.LastMoney or moneyObject.Value
+        local current = moneyObject.Value
+        if _G._IsRecording then
+            if current < previous then
+                ObserverRecord.LastDrop = {Amount = previous - current, Time = tick()}
+            end
+        end
+        ObserverRecord.LastMoney = current
+    end)
+end
+
+local function AttachTowersObserver(towersFolder)
+    if ObserverRecord.TowersFolder == towersFolder then return end
+    ObserverRecord.TowersFolder = towersFolder
+
+    towersFolder.ChildRemoved:Connect(function(tower)
+        if not _G._IsRecording then return end
+        local placedTowers = _G._PlacedTowers
+        if type(placedTowers) ~= "table" then return end
+
+        local idx = table.find(placedTowers, tower)
+        if not idx then return end
+
+        local pivot = GetTowerPivot(tower)
+        table.insert(ObserverRecord.Removed, {
+            Index = idx,
+            Position = pivot and pivot.Position or nil,
+            Time = tick(),
+            Used = false,
+        })
+        CleanupRemovedEntries()
+    end)
+
+    towersFolder.ChildAdded:Connect(function(tower)
+        task.wait(0.25)
+        if not _G._IsRecording then return end
+
+        local placedTowers = _G._PlacedTowers
+        if type(placedTowers) == "table" and table.find(placedTowers, tower) then
+            return
+        end
+
+        local dropPrice = nil
+        local waitForDrop = 0
+        repeat
+            dropPrice = GetRecentMoneyDrop(3)
+            if dropPrice and dropPrice > 0 then break end
+            task.wait(0.05)
+            waitForDrop = waitForDrop + 0.05
+        until waitForDrop >= 2 or not _G._IsRecording
+
+        task.wait(0.1)
+        if type(placedTowers) == "table" and table.find(placedTowers, tower) then
+            return
+        end
+        if not dropPrice or dropPrice <= 0 then return end
+        if not TowerBelongsToPlayerOrUnknown(tower) then return end
+
+        local pivot = GetTowerPivot(tower)
+        if not pivot then return end
+
+        local removedEntry = FindRecentRemovedNear(pivot.Position)
+        if removedEntry then
+            RecordObservedUpgrade(tower, removedEntry, dropPrice)
+            return
+        end
+
+        local nearbyIndex = FindPlacedTowerIndexNear(pivot.Position, 2)
+        if nearbyIndex then return end
+
+        RecordObservedSpawn(tower, pivot, dropPrice)
+    end)
+end
+
+local function StartObserverRecorder()
+    if ObserverRecord.Started then return end
+    ObserverRecord.Started = true
+    task.spawn(function()
+        while true do
+            pcall(function()
+                local leaderstats = Player and Player:FindFirstChild("leaderstats")
+                local moneyObject = leaderstats and leaderstats:FindFirstChild("Money")
+                if moneyObject then
+                    AttachMoneyObserver(moneyObject)
+                end
+
+                local towersFolder = workspace:FindFirstChild("Towers")
+                if towersFolder then
+                    AttachTowersObserver(towersFolder)
+                end
+            end)
+            task.wait(1)
+        end
+    end)
+    print("Observer recorder ready (workspace fallback)")
+end
+
 pcall(function()
     if hookmetamethod then
         old = hookmetamethod(game, "__namecall", function(self, ...)
@@ -494,10 +852,14 @@ end)
 -- 📤 EXPORT
 -- ═══════════════════════════════════════════════════════
 
+StartObserverRecorder()
+
 _G._AntiDetect = AntiDetect
 _G.RandomDelay = RandomDelay
 _G.CheckRateLimit = CheckRateLimit
 _G._HookEnabled = HookEnabled
 _G._HookOld = old
+_G._ObserverRecordEnabled = true
+_G.ResolveTowerUUIDByDisplayName = ResolveTowerUUIDByDisplayName
 
 print("✅ [Module 4/12] AntiDetect.lua loaded successfully")

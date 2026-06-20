@@ -48,6 +48,88 @@ local function GetCurrentMoney()
     return money
 end
 
+local function LooksLikeUUID(value)
+    return type(value) == "string" and #value >= 20 and value:find("%-") ~= nil
+end
+
+local function NormalizeTowerText(value)
+    value = tostring(value or ""):lower()
+    value = value:gsub("%s+", "")
+    value = value:gsub("[^%w]", "")
+    return value
+end
+
+local function TextMatchesTowerName(text, towerName)
+    local a = NormalizeTowerText(text)
+    local b = NormalizeTowerText(towerName)
+    if #a < 3 or #b < 3 then return false end
+    return a == b or a:find(b, 1, true) ~= nil or b:find(a, 1, true) ~= nil
+end
+
+local function DecodeStoredCFrame(value)
+    if type(value) == "table" and value.Type == "CFrame" and type(value.Value) == "table" then
+        return CFrame.new(unpack(value.Value))
+    end
+    return nil
+end
+
+local function GuiNodeHasTowerText(root, towerName)
+    if TextMatchesTowerName(root.Name, towerName) then return true end
+    for _, desc in ipairs(root:GetDescendants()) do
+        if TextMatchesTowerName(desc.Name, towerName) then
+            return true
+        end
+        if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
+            if TextMatchesTowerName(desc.Text, towerName) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function ResolveTowerUUIDByDisplayName(displayName)
+    if LooksLikeUUID(displayName) then return displayName end
+    if _G.ResolveTowerUUIDByDisplayName then
+        local ok, uuid = pcall(function()
+            return _G.ResolveTowerUUIDByDisplayName(displayName)
+        end)
+        if ok and uuid then return uuid end
+    end
+
+    local storyTowers = _G.StoryTowers
+    if type(storyTowers) == "table" then
+        for _, data in pairs(storyTowers) do
+            if data and data.ID and data.TowerName and TextMatchesTowerName(data.TowerName, displayName) then
+                return data.ID
+            end
+        end
+    end
+
+    local found = nil
+    pcall(function()
+        local playerGui = Player and Player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+        local roots = {}
+        local inv = playerGui:FindFirstChild("Inventory")
+        if inv then table.insert(roots, inv) end
+        local hotbar = playerGui:FindFirstChild("Hotbar") or playerGui:FindFirstChild("GameGui")
+        if hotbar then table.insert(roots, hotbar) end
+        table.insert(roots, playerGui)
+
+        for _, root in ipairs(roots) do
+            if found then break end
+            for _, node in ipairs(root:GetDescendants()) do
+                if LooksLikeUUID(node.Name) and GuiNodeHasTowerText(node, displayName) then
+                    found = node.Name
+                    break
+                end
+            end
+        end
+    end)
+    return found
+end
+
 local AUTO_UPGRADE_SCAN_DELAY = 1
 local AUTO_UPGRADE_TOWER_DELAY = 0.15
 local AUTO_UPGRADE_FAIL_COOLDOWN = 4
@@ -451,10 +533,33 @@ local function RunMacroLogic()
 
                     local unit = nil
                     local spawnError = nil
-                    local decodedArgs = DeepDecode(act.Args)
+                    local decodedArgs = {}
+                    if type(act.Args) == "table" then
+                        decodedArgs = DeepDecode(act.Args)
+                    end
+
+                    if (not decodedArgs[1] or not decodedArgs[2]) and act.Observer then
+                        local fallbackUUID = nil
+                        if LooksLikeUUID(act.TowerName) then
+                            fallbackUUID = act.TowerName
+                        else
+                            fallbackUUID = ResolveTowerUUIDByDisplayName(act.TowerDisplayName or act.TowerName)
+                        end
+                        local fallbackCFrame = DecodeStoredCFrame(act.CFrame)
+                        if fallbackUUID and fallbackCFrame then
+                            decodedArgs = {fallbackUUID, fallbackCFrame}
+                            print("Observer Spawn resolved: " .. tostring(act.TowerDisplayName or act.TowerName) .. " -> " .. tostring(fallbackUUID))
+                        end
+                    end
+
+                    if not decodedArgs[1] or not decodedArgs[2] then
+                        print("⚠️ [" .. i .. "/" .. #data .. "] Spawn SKIP - missing tower UUID/CFrame for " .. tostring(act.TowerDisplayName or act.TowerName))
+                        success = true
+                        break
+                    end
 
                     -- 🎭 ถ้า args[3] เป็น possess tower (สิงตัว) → รอให้ tower target มีใน workspace ก่อน
-                    if decodedArgs[3] == nil and act.Args[3] and type(act.Args[3]) == "table" and act.Args[3].Type == "Instance" then
+                    if decodedArgs[3] == nil and act.Args and act.Args[3] and type(act.Args[3]) == "table" and act.Args[3].Type == "Instance" then
                         local targetPath = act.Args[3].Value
                         print("🎭 [" .. i .. "/" .. #data .. "] รอ Possess Tower: " .. targetPath)
                         local waitPossess = 0

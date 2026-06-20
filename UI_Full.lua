@@ -581,11 +581,11 @@ local function LoadMainUI()
 
     -- Hook Status
     local HookStatus = Instance.new("TextLabel", Sidebar)
-    HookStatus.Text = HookEnabled and "🟢 Hook: ON" or "🔴 Hook: OFF"
+    HookStatus.Text = HookEnabled and "🟢 Hook: ON" or (_G._ObserverRecordEnabled and "🟡 Hook: OFF / OBS" or "🔴 Hook: OFF")
     HookStatus.Size = UDim2.new(1, 0, 0, 15)
     HookStatus.Position = UDim2.new(0, 0, 0, 120)
     HookStatus.BackgroundTransparency = 1
-    HookStatus.TextColor3 = HookEnabled and Colors.Green or Color3.fromRGB(255, 100, 100)
+    HookStatus.TextColor3 = HookEnabled and Colors.Green or (_G._ObserverRecordEnabled and Colors.Yellow or Color3.fromRGB(255, 100, 100))
     HookStatus.Font = Enum.Font.Gotham
     HookStatus.TextSize = 9
     HookStatus.ZIndex = 3
@@ -2909,7 +2909,8 @@ local function LoadMainUI()
 
     local RecBox = createContainer(Page2, 60)
     createToggle(RecBox, "🔴 Record Macro", false, function(v)
-        if not HookEnabled then warn("⚠️ Recording not available"); return end
+        if not HookEnabled and not _G._ObserverRecordEnabled then warn("⚠️ Recording not available"); return end
+        if not HookEnabled then warn("⚠️ Hook not available - using observer fallback") end
         IsRecording = v
         _G._IsRecording = v
         if IsRecording then
@@ -3422,7 +3423,8 @@ local function LoadMainUI()
 
     -- Record toggle (uses same hook as main macro)
     createToggle(EventFileBox, "🔴 Record Event Macro", false, function(v)
-        if not HookEnabled then warn("⚠️ Hook not available"); return end
+        if not HookEnabled and not _G._ObserverRecordEnabled then warn("⚠️ Hook not available"); return end
+        if not HookEnabled then warn("⚠️ Hook not available - using observer fallback") end
         IsRecording = v
         _G._IsRecording = v
         if v then
