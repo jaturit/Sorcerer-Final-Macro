@@ -288,6 +288,64 @@ local function ResolveTowerUUIDByDisplayName(displayName)
     return found
 end
 
+local function CollectTowerUUIDCandidates(displayName, primaryUUID)
+    local candidates = {}
+    local seen = {}
+
+    local function add(uuid)
+        if LooksLikeUUID(uuid) and not seen[uuid] then
+            seen[uuid] = true
+            table.insert(candidates, uuid)
+        end
+    end
+
+    pcall(function()
+        local playerGui = Player and Player:FindFirstChild("PlayerGui")
+        local roots = {}
+        if playerGui then
+            AddSearchRoot(roots, playerGui:FindFirstChild("Inventory"))
+            AddSearchRoot(roots, playerGui:FindFirstChild("Hotbar"))
+            AddSearchRoot(roots, playerGui:FindFirstChild("GameGui"))
+            AddSearchRoot(roots, playerGui)
+        end
+        AddSearchRoot(roots, Player)
+
+        local rs = game:GetService("ReplicatedStorage")
+        for _, rootName in ipairs({"PlayerData", "Player_Data", "Profiles", "Data", "Inventories"}) do
+            local root = rs:FindFirstChild(rootName)
+            if root then
+                AddSearchRoot(roots, root:FindFirstChild(Player.Name))
+                AddSearchRoot(roots, root:FindFirstChild(tostring(Player.UserId)))
+                AddSearchRoot(roots, root)
+            end
+        end
+
+        for _, root in ipairs(roots) do
+            for _, node in ipairs(root:GetDescendants()) do
+                local uuid = ExtractUUIDFromNode(node)
+                if uuid and NodeOrParentsHaveTowerText(node, displayName) then
+                    add(uuid)
+                end
+            end
+        end
+    end)
+
+    local storyTowers = _G.StoryTowers
+    if type(storyTowers) == "table" then
+        for _, data in pairs(storyTowers) do
+            if data and data.ID and data.TowerName and TextMatchesTowerName(data.TowerName, displayName) then
+                add(data.ID)
+            end
+        end
+    end
+
+    add(GetCachedTowerUUID(displayName))
+    add(ResolveTowerUUIDFromSavedMacros(displayName))
+    add(primaryUUID)
+
+    return candidates
+end
+
 local AUTO_UPGRADE_SCAN_DELAY = 1
 local AUTO_UPGRADE_TOWER_DELAY = 0.15
 local AUTO_UPGRADE_FAIL_COOLDOWN = 4
@@ -710,6 +768,16 @@ local function RunMacroLogic()
                         end
                     end
 
+                    local spawnDisplayName = act.TowerDisplayName or act.TowerName or towerName
+                    local uuidCandidates = CollectTowerUUIDCandidates(spawnDisplayName, decodedArgs[1])
+                    if #uuidCandidates > 0 then
+                        local selectedUUID = uuidCandidates[((attemptCount - 1) % #uuidCandidates) + 1]
+                        if selectedUUID ~= decodedArgs[1] then
+                            print("🔁 [" .. i .. "/" .. #data .. "] Try UUID candidate " .. (((attemptCount - 1) % #uuidCandidates) + 1) .. "/" .. #uuidCandidates .. " for " .. tostring(spawnDisplayName) .. ": " .. tostring(selectedUUID))
+                        end
+                        decodedArgs[1] = selectedUUID
+                    end
+
                     if not decodedArgs[1] or not decodedArgs[2] then
                         local missingParts = {}
                         if not decodedArgs[1] then table.insert(missingParts, "UUID") end
@@ -799,7 +867,8 @@ local function RunMacroLogic()
                     elseif moneySpent <= 0 then
                         -- ❌ เงินพอแต่วางไม่ได้ = ถึง limit แน่ๆ (server ไม่ตัดเงิน)
                         -- ถ้าลองหลายครั้งแล้วยังไม่สำเร็จ ให้ถือว่าถึง limit แล้ว skip
-                        if attemptCount >= 3 then
+                        local noSpendLimit = math.max(3, math.min(MAX_ATTEMPTS, #uuidCandidates))
+                        if attemptCount >= noSpendLimit then
                             spawnIndex = spawnIndex + 1
                             GameTowers[spawnIndex] = nil
                             success = true
