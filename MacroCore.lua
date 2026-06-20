@@ -66,16 +66,25 @@ local function TextMatchesTowerName(text, towerName)
     return a == b or a:find(b, 1, true) ~= nil or b:find(a, 1, true) ~= nil
 end
 
-local function CacheTowerUUID(displayName, uuid)
+local function CacheTowerUUID(displayName, uuid, slotNumber)
     if not displayName or not LooksLikeUUID(uuid) then return end
     _G._TowerUUIDCache = _G._TowerUUIDCache or {}
-    _G._TowerUUIDCache[NormalizeTowerText(displayName)] = uuid
+    local key = NormalizeTowerText(displayName)
+    _G._TowerUUIDCache[key] = uuid
+    if slotNumber then
+        _G._TowerUUIDCache[key .. "#slot" .. tostring(slotNumber)] = uuid
+    end
 end
 
-local function GetCachedTowerUUID(displayName)
+local function GetCachedTowerUUID(displayName, slotNumber)
     local cache = _G._TowerUUIDCache
     if type(cache) ~= "table" then return nil end
-    return cache[NormalizeTowerText(displayName)]
+    local key = NormalizeTowerText(displayName)
+    if slotNumber then
+        local slotUUID = cache[key .. "#slot" .. tostring(slotNumber)]
+        if slotUUID then return slotUUID end
+    end
+    return cache[key]
 end
 
 local function DecodeStoredCFrame(value)
@@ -177,6 +186,149 @@ local function AddSearchRoot(roots, root)
     end
 end
 
+local function TextHasNumber(value, number)
+    if not number then return false end
+    value = tostring(value or "")
+    for digits in value:gmatch("%d+") do
+        if tonumber(digits) == tonumber(number) then
+            return true
+        end
+    end
+    return false
+end
+
+local function NodeTextHasNumber(node, number)
+    if TextHasNumber(node.Name, number) then return true end
+    local okText, textValue = pcall(function()
+        return node.Text
+    end)
+    if okText and TextHasNumber(textValue, number) then return true end
+    local okValue, rawValue = pcall(function()
+        return node.Value
+    end)
+    return okValue and TextHasNumber(rawValue, number)
+end
+
+local function ExtractSlotNumberFromNode(root)
+    for slot = 1, 10 do
+        if tostring(root.Name) == tostring(slot) then return slot end
+    end
+    local okText, textValue = pcall(function()
+        return root.Text
+    end)
+    if okText then
+        local n = tonumber(tostring(textValue):match("^%s*(%d+)%s*$"))
+        if n and n >= 1 and n <= 10 then return n end
+    end
+    return nil
+end
+
+local function ExtractSlotNumberFromTree(root, includeDescendants)
+    local directSlot = ExtractSlotNumberFromNode(root)
+    if directSlot then return directSlot end
+    if includeDescendants == false then return nil end
+
+    for _, desc in ipairs(root:GetDescendants()) do
+        local slot = ExtractSlotNumberFromNode(desc)
+        if slot then return slot end
+    end
+    return nil
+end
+
+local function NodeOrParentsHaveSlotNumber(node, slotNumber)
+    if not slotNumber then return true end
+    local wanted = tonumber(slotNumber)
+    local current = node
+    for _ = 1, 6 do
+        if not current then break end
+        local slot = ExtractSlotNumberFromTree(current)
+        if slot then
+            return slot == wanted
+        end
+        current = current.Parent
+    end
+    return false
+end
+
+local function GetGuiSearchRoots()
+    local roots = {}
+    local playerGui = Player and Player:FindFirstChild("PlayerGui")
+    if playerGui then
+        AddSearchRoot(roots, playerGui:FindFirstChild("Hotbar"))
+        AddSearchRoot(roots, playerGui:FindFirstChild("GameGui"))
+        AddSearchRoot(roots, playerGui:FindFirstChild("Inventory"))
+        AddSearchRoot(roots, playerGui)
+    end
+    return roots
+end
+
+local function FindHotbarSlotContainer(slotNumber, displayName, price)
+    if not slotNumber and not price and not displayName then return nil end
+    for _, root in ipairs(GetGuiSearchRoots()) do
+        for _, node in ipairs(root:GetDescendants()) do
+            local matchesTarget = (price and NodeTextHasNumber(node, price)) or TextMatchesTowerName(node.Name, displayName)
+            if not matchesTarget then
+                local okText, textValue = pcall(function()
+                    return node.Text
+                end)
+                matchesTarget = okText and TextMatchesTowerName(textValue, displayName)
+            end
+            if matchesTarget then
+                local parent = node
+                for _ = 1, 8 do
+                    if not parent then break end
+                    local slot = ExtractSlotNumberFromTree(parent, parent ~= root)
+                    if slot and (not slotNumber or slot == tonumber(slotNumber)) then
+                        return parent, slot
+                    end
+                    parent = parent.Parent
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function DetectHotbarSlot(displayName, price)
+    local _, slot = FindHotbarSlotContainer(nil, displayName, price)
+    return slot
+end
+
+local function ResolveTowerUUIDByHotbarSlot(slotNumber, displayName, price)
+    if not slotNumber then return nil end
+    local cached = GetCachedTowerUUID(displayName, slotNumber)
+    if cached then return cached end
+
+    local container = FindHotbarSlotContainer(slotNumber, displayName, price)
+    if not container then return nil end
+
+    local uuid = ExtractUUIDFromNode(container)
+    if uuid then
+        CacheTowerUUID(displayName, uuid, slotNumber)
+        return uuid
+    end
+
+    for _, node in ipairs(container:GetDescendants()) do
+        uuid = ExtractUUIDFromNode(node)
+        if uuid then
+            CacheTowerUUID(displayName, uuid, slotNumber)
+            return uuid
+        end
+    end
+
+    local parent = container.Parent
+    for _ = 1, 4 do
+        if not parent then break end
+        uuid = ExtractUUIDFromNode(parent)
+        if uuid then
+            CacheTowerUUID(displayName, uuid, slotNumber)
+            return uuid
+        end
+        parent = parent.Parent
+    end
+    return nil
+end
+
 local function ResolveTowerUUIDFromSavedMacros(displayName)
     if not listfiles then return nil end
 
@@ -248,9 +400,6 @@ local function ResolveTowerUUIDByDisplayName(displayName)
         end
     end
 
-    local savedUUID = ResolveTowerUUIDFromSavedMacros(displayName)
-    if savedUUID then return savedUUID end
-
     local found = nil
     pcall(function()
         local playerGui = Player and Player:FindFirstChild("PlayerGui")
@@ -285,10 +434,15 @@ local function ResolveTowerUUIDByDisplayName(displayName)
             end
         end
     end)
-    return found
+    if found then return found end
+
+    local savedUUID = ResolveTowerUUIDFromSavedMacros(displayName)
+    if savedUUID then return savedUUID end
+
+    return nil
 end
 
-local function CollectTowerUUIDCandidates(displayName, primaryUUID)
+local function CollectTowerUUIDCandidates(displayName, primaryUUID, hotbarSlot, price)
     local candidates = {}
     local seen = {}
 
@@ -298,6 +452,8 @@ local function CollectTowerUUIDCandidates(displayName, primaryUUID)
             table.insert(candidates, uuid)
         end
     end
+
+    add(ResolveTowerUUIDByHotbarSlot(hotbarSlot, displayName, price))
 
     pcall(function()
         local playerGui = Player and Player:FindFirstChild("PlayerGui")
@@ -322,8 +478,14 @@ local function CollectTowerUUIDCandidates(displayName, primaryUUID)
 
         for _, root in ipairs(roots) do
             for _, node in ipairs(root:GetDescendants()) do
+                local restrictToSlot = hotbarSlot
+                    and playerGui
+                    and (root == playerGui or root:IsDescendantOf(playerGui) or node:IsDescendantOf(playerGui))
                 local uuid = ExtractUUIDFromNode(node)
-                if uuid and NodeOrParentsHaveTowerText(node, displayName) then
+                if uuid
+                    and NodeOrParentsHaveTowerText(node, displayName)
+                    and (not restrictToSlot or NodeOrParentsHaveSlotNumber(node, hotbarSlot))
+                then
                     add(uuid)
                 end
             end
@@ -755,11 +917,14 @@ local function RunMacroLogic()
                     end
 
                     if (not decodedArgs[1] or not decodedArgs[2]) and act.Observer then
+                        local fallbackDisplayName = act.TowerDisplayName or act.TowerName
+                        local fallbackSlot = act.HotbarSlot or DetectHotbarSlot(fallbackDisplayName, act.Price)
                         local fallbackUUID = nil
-                        if LooksLikeUUID(act.TowerName) then
+                        fallbackUUID = ResolveTowerUUIDByHotbarSlot(fallbackSlot, fallbackDisplayName, act.Price)
+                        if not fallbackUUID and LooksLikeUUID(act.TowerName) then
                             fallbackUUID = act.TowerName
-                        else
-                            fallbackUUID = ResolveTowerUUIDByDisplayName(act.TowerDisplayName or act.TowerName)
+                        elseif not fallbackUUID then
+                            fallbackUUID = ResolveTowerUUIDByDisplayName(fallbackDisplayName)
                         end
                         local fallbackCFrame = DecodeStoredCFrame(act.CFrame)
                         if fallbackUUID and fallbackCFrame then
@@ -769,7 +934,8 @@ local function RunMacroLogic()
                     end
 
                     local spawnDisplayName = act.TowerDisplayName or act.TowerName or towerName
-                    local uuidCandidates = CollectTowerUUIDCandidates(spawnDisplayName, decodedArgs[1])
+                    local preferredSlot = act.HotbarSlot or DetectHotbarSlot(spawnDisplayName, act.Price or requiredMoney)
+                    local uuidCandidates = CollectTowerUUIDCandidates(spawnDisplayName, decodedArgs[1], preferredSlot, act.Price or requiredMoney)
                     if #uuidCandidates > 0 then
                         local selectedUUID = uuidCandidates[((attemptCount - 1) % #uuidCandidates) + 1]
                         if selectedUUID ~= decodedArgs[1] then
