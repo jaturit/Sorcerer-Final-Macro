@@ -66,6 +66,18 @@ local function TextMatchesTowerName(text, towerName)
     return a == b or a:find(b, 1, true) ~= nil or b:find(a, 1, true) ~= nil
 end
 
+local function CacheTowerUUID(displayName, uuid)
+    if not displayName or not LooksLikeUUID(uuid) then return end
+    _G._TowerUUIDCache = _G._TowerUUIDCache or {}
+    _G._TowerUUIDCache[NormalizeTowerText(displayName)] = uuid
+end
+
+local function GetCachedTowerUUID(displayName)
+    local cache = _G._TowerUUIDCache
+    if type(cache) ~= "table" then return nil end
+    return cache[NormalizeTowerText(displayName)]
+end
+
 local function DecodeStoredCFrame(value)
     if type(value) == "table" and value.Type == "CFrame" and type(value.Value) == "table" then
         return CFrame.new(unpack(value.Value))
@@ -75,6 +87,29 @@ end
 
 local function GuiNodeHasTowerText(root, towerName)
     if TextMatchesTowerName(root.Name, towerName) then return true end
+    local okText, textValue = pcall(function()
+        return root.Text
+    end)
+    if okText and textValue and TextMatchesTowerName(textValue, towerName) then
+        return true
+    end
+    local okValue, rawValue = pcall(function()
+        return root.Value
+    end)
+    if okValue and rawValue ~= nil and TextMatchesTowerName(rawValue, towerName) then
+        return true
+    end
+    local attrMatch = false
+    pcall(function()
+        for _, value in pairs(root:GetAttributes()) do
+            if TextMatchesTowerName(value, towerName) then
+                attrMatch = true
+                break
+            end
+        end
+    end)
+    if attrMatch then return true end
+
     for _, desc in ipairs(root:GetDescendants()) do
         if TextMatchesTowerName(desc.Name, towerName) then
             return true
@@ -84,44 +119,167 @@ local function GuiNodeHasTowerText(root, towerName)
                 return true
             end
         end
+        local attrName = nil
+        pcall(function()
+            attrName = desc:GetAttribute("DisplayName") or desc:GetAttribute("TowerName") or desc:GetAttribute("UnitName")
+        end)
+        if attrName and TextMatchesTowerName(attrName, towerName) then
+            return true
+        end
+        local valueText = nil
+        pcall(function()
+            valueText = desc.Value
+        end)
+        if valueText ~= nil and TextMatchesTowerName(valueText, towerName) then
+            return true
+        end
     end
     return false
 end
 
+local function ExtractUUIDFromNode(node)
+    if LooksLikeUUID(node.Name) then return node.Name end
+
+    local uuid = nil
+    pcall(function()
+        for _, value in pairs(node:GetAttributes()) do
+            if LooksLikeUUID(value) then
+                uuid = value
+                break
+            end
+        end
+    end)
+    if uuid then return uuid end
+
+    pcall(function()
+        local value = node.Value
+        if LooksLikeUUID(value) then
+            uuid = value
+        end
+    end)
+    return uuid
+end
+
+local function NodeOrParentsHaveTowerText(node, displayName)
+    if GuiNodeHasTowerText(node, displayName) then return true end
+    local parent = node.Parent
+    for _ = 1, 3 do
+        if not parent then break end
+        if GuiNodeHasTowerText(parent, displayName) then return true end
+        parent = parent.Parent
+    end
+    return false
+end
+
+local function AddSearchRoot(roots, root)
+    if root and not table.find(roots, root) then
+        table.insert(roots, root)
+    end
+end
+
+local function ResolveTowerUUIDFromSavedMacros(displayName)
+    if not listfiles then return nil end
+
+    local folders = {
+        FOLDER,
+        FOLDER and (FOLDER .. "/event") or nil,
+        _G._CASINO_FOLDER,
+    }
+
+    local found = nil
+    pcall(function()
+        for _, folder in ipairs(folders) do
+            if found then break end
+            if folder and isfolder and isfolder(folder) then
+                for _, path in ipairs(listfiles(folder)) do
+                    if found then break end
+                    if type(path) == "string" and path:lower():sub(-5) == ".json" and isfile(path) then
+                        local ok, raw = pcall(function()
+                            return HttpService:JSONDecode(readfile(path))
+                        end)
+                        if ok and type(raw) == "table" then
+                            local actions = raw.Actions or raw
+                            if type(actions) == "table" then
+                                for _, act in ipairs(actions) do
+                                    if type(act) == "table" and act.Type == "Spawn" then
+                                        local uuid = act.TowerName or act.TowerID or (act.Args and act.Args[1])
+                                        local label = act.TowerDisplayName or act.DisplayName or act.UnitName
+                                        if LooksLikeUUID(uuid) and label and TextMatchesTowerName(label, displayName) then
+                                            found = uuid
+                                            CacheTowerUUID(label, uuid)
+                                            CacheTowerUUID(displayName, uuid)
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    return found
+end
+
 local function ResolveTowerUUIDByDisplayName(displayName)
     if LooksLikeUUID(displayName) then return displayName end
+    local cached = GetCachedTowerUUID(displayName)
+    if cached then return cached end
+
     if _G.ResolveTowerUUIDByDisplayName then
         local ok, uuid = pcall(function()
             return _G.ResolveTowerUUIDByDisplayName(displayName)
         end)
-        if ok and uuid then return uuid end
+        if ok and uuid then
+            CacheTowerUUID(displayName, uuid)
+            return uuid
+        end
     end
 
     local storyTowers = _G.StoryTowers
     if type(storyTowers) == "table" then
         for _, data in pairs(storyTowers) do
             if data and data.ID and data.TowerName and TextMatchesTowerName(data.TowerName, displayName) then
+                CacheTowerUUID(displayName, data.ID)
                 return data.ID
             end
         end
     end
 
+    local savedUUID = ResolveTowerUUIDFromSavedMacros(displayName)
+    if savedUUID then return savedUUID end
+
     local found = nil
     pcall(function()
         local playerGui = Player and Player:FindFirstChild("PlayerGui")
-        if not playerGui then return end
         local roots = {}
-        local inv = playerGui:FindFirstChild("Inventory")
-        if inv then table.insert(roots, inv) end
-        local hotbar = playerGui:FindFirstChild("Hotbar") or playerGui:FindFirstChild("GameGui")
-        if hotbar then table.insert(roots, hotbar) end
-        table.insert(roots, playerGui)
+        if playerGui then
+            AddSearchRoot(roots, playerGui:FindFirstChild("Inventory"))
+            AddSearchRoot(roots, playerGui:FindFirstChild("Hotbar"))
+            AddSearchRoot(roots, playerGui:FindFirstChild("GameGui"))
+            AddSearchRoot(roots, playerGui)
+        end
+        AddSearchRoot(roots, Player)
+
+        local rs = game:GetService("ReplicatedStorage")
+        for _, rootName in ipairs({"PlayerData", "Player_Data", "Profiles", "Data", "Inventories"}) do
+            local root = rs:FindFirstChild(rootName)
+            if root then
+                AddSearchRoot(roots, root:FindFirstChild(Player.Name))
+                AddSearchRoot(roots, root:FindFirstChild(tostring(Player.UserId)))
+                AddSearchRoot(roots, root)
+            end
+        end
 
         for _, root in ipairs(roots) do
             if found then break end
             for _, node in ipairs(root:GetDescendants()) do
-                if LooksLikeUUID(node.Name) and GuiNodeHasTowerText(node, displayName) then
-                    found = node.Name
+                local uuid = ExtractUUIDFromNode(node)
+                if uuid and NodeOrParentsHaveTowerText(node, displayName) then
+                    found = uuid
+                    CacheTowerUUID(displayName, uuid)
                     break
                 end
             end
@@ -553,7 +711,10 @@ local function RunMacroLogic()
                     end
 
                     if not decodedArgs[1] or not decodedArgs[2] then
-                        print("⚠️ [" .. i .. "/" .. #data .. "] Spawn SKIP - missing tower UUID/CFrame for " .. tostring(act.TowerDisplayName or act.TowerName))
+                        local missingParts = {}
+                        if not decodedArgs[1] then table.insert(missingParts, "UUID") end
+                        if not decodedArgs[2] then table.insert(missingParts, "CFrame") end
+                        print("⚠️ [" .. i .. "/" .. #data .. "] Spawn SKIP - missing " .. table.concat(missingParts, "+") .. " for " .. tostring(act.TowerDisplayName or act.TowerName))
                         success = true
                         break
                     end
