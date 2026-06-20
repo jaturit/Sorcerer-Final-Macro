@@ -63,6 +63,57 @@ end
 local HookEnabled = false
 local old = nil
 
+local function SnapshotWorkspaceTowers()
+    local seen = {}
+    pcall(function()
+        local towersFolder = workspace:FindFirstChild("Towers")
+        if not towersFolder then return end
+        for _, tower in ipairs(towersFolder:GetChildren()) do
+            seen[tower] = true
+        end
+    end)
+    return seen
+end
+
+local function FindNewWorkspaceTower(snapshot, placedCFrame)
+    local found = nil
+    pcall(function()
+        local towersFolder = workspace:FindFirstChild("Towers")
+        if not towersFolder then return end
+
+        local candidates = {}
+        for _, tower in ipairs(towersFolder:GetChildren()) do
+            if not snapshot or not snapshot[tower] then
+                table.insert(candidates, tower)
+            end
+        end
+        if #candidates == 0 then return end
+
+        if typeof(placedCFrame) == "CFrame" then
+            local placedPos = placedCFrame.Position
+            local bestTower, bestDist = nil, math.huge
+            for _, tower in ipairs(candidates) do
+                local ok, pivot = pcall(function()
+                    return tower:GetPivot()
+                end)
+                if ok and pivot then
+                    local dist = (pivot.Position - placedPos).Magnitude
+                    if dist < bestDist then
+                        bestTower = tower
+                        bestDist = dist
+                    end
+                elseif not bestTower then
+                    bestTower = tower
+                end
+            end
+            found = bestTower
+        else
+            found = candidates[#candidates]
+        end
+    end)
+    return found
+end
+
 pcall(function()
     if hookmetamethod then
         old = hookmetamethod(game, "__namecall", function(self, ...)
@@ -137,7 +188,7 @@ pcall(function()
             end
 
             -- Casino Macro Recording
-            if CasinoIsRecording and not checkcaller() and method == "InvokeServer" then
+            if CasinoIsRecording and not checkcaller() and (method == "InvokeServer" or method == "FireServer") then
                 if self.Name == "SpawnNewTower" then
                     local towerID = args[1]
                     local placedCFrame = args[2]
@@ -281,8 +332,9 @@ pcall(function()
                 end
             end
 
-            if IsRecording and not checkcaller() and method == "InvokeServer" then
+            if IsRecording and not checkcaller() and (method == "InvokeServer" or method == "FireServer") then
                 if self.Name == "SpawnNewTower" then
+                    local knownTowers = SnapshotWorkspaceTowers()
                     local moneyBefore = Player.leaderstats.Money.Value
                     local result = old(self, ...)
                     -- รอจนเงินเปลี่ยนจริงๆ ไม่เกิน 2 วิ
@@ -290,6 +342,18 @@ pcall(function()
                     repeat task.wait(0.05) waited = waited + 0.05
                     until Player.leaderstats.Money.Value ~= moneyBefore or waited >= 2
                     local moneyAfter = Player.leaderstats.Money.Value
+                    if (not result or typeof(result) ~= "Instance") and moneyAfter < moneyBefore then
+                        local findWait = 0
+                        repeat
+                            result = FindNewWorkspaceTower(knownTowers, args[2])
+                            if result then break end
+                            task.wait(0.05)
+                            findWait = findWait + 0.05
+                        until findWait >= 1
+                        if result then
+                            print("Recorded Spawn fallback: result=nil but money changed, found tower in workspace")
+                        end
+                    end
                     if result and moneyAfter < moneyBefore then
                         local realCost = moneyBefore - moneyAfter
                         -- จับชื่อ tower จริงจาก result (workspace.Towers)
