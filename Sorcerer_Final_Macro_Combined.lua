@@ -6084,9 +6084,72 @@ task.spawn(function()
 end)
 
 _G.MacroRunning = false
+_G._MacroStageWaiterRunning = false
+
+local function IsMacroStageReady()
+    local mapName = GetCurrentMapName and GetCurrentMapName() or nil
+    if not mapName then
+        return false, "map"
+    end
+
+    local towersFolder = workspace:FindFirstChild("Towers")
+    if not towersFolder then
+        return false, "workspace.Towers"
+    end
+
+    local functions = ReplicatedStorage:FindFirstChild("Functions")
+    if not functions then
+        return false, "ReplicatedStorage.Functions"
+    end
+
+    if not functions:FindFirstChild("SpawnNewTower") then
+        return false, "SpawnNewTower"
+    end
+
+    return true, mapName
+end
+
+local function WaitForMacroStageThenRun(firstMissing)
+    if _G._MacroStageWaiterRunning then return end
+    _G._MacroStageWaiterRunning = true
+
+    task.spawn(function()
+        local lastLog = 0
+        print("AutoPlay armed, waiting for stage before macro starts... (" .. tostring(firstMissing or "?") .. ")")
+
+        while _G.AutoPlay do
+            local ready, info = IsMacroStageReady()
+            if ready then
+                print("Stage ready for macro: " .. tostring(info))
+                _G._MacroStageWaiterRunning = false
+                if _G.AutoPlay and not _G.MacroRunning and _G.RunMacroLogic then
+                    _G.RunMacroLogic()
+                end
+                return
+            end
+
+            if tick() - lastLog >= 8 then
+                print("AutoPlay waiting for stage... missing " .. tostring(info))
+                lastLog = tick()
+            end
+            task.wait(1)
+        end
+
+        _G._MacroStageWaiterRunning = false
+        print("AutoPlay stage wait cancelled")
+    end)
+end
+
 local function RunMacroLogic()
     if _G.MacroRunning then return end
     if not _G.AutoPlay then return end
+
+    local stageReady, stageInfo = IsMacroStageReady()
+    if not stageReady then
+        WaitForMacroStageThenRun(stageInfo)
+        return
+    end
+
     _G.MacroRunning = true
 
     -- 🗺️ ตรวจ map → macro binding ก่อน run
