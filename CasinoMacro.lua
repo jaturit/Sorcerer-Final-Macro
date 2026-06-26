@@ -180,6 +180,8 @@ local function RunCasinoMacroLogic()
         return
     end
 
+    _G.CasinoMacroRunning = true
+
     -- รีเซ็ต tracker สำหรับรอบนี้
     StopCasinoDoorTracker()
     task.wait(0.1)
@@ -196,6 +198,8 @@ local function RunCasinoMacroLogic()
     print("✅ Tower ว่างแล้ว เริ่ม macro")
 
     local GameTowers = {}
+    _G._AutoUpgradeMacroTowers = GameTowers
+    _G._AutoUpgradeSource = "Casino"
     local recycledIndexes = {}
     print("▶️ Casino Macro เริ่มเล่น: "..CasinoSelectedFile.." | "..#data.." actions")
 
@@ -515,6 +519,10 @@ local function RunCasinoMacroLogic()
         end
     end
     print("✅ Casino Macro จบ!")
+    _G.CasinoMacroRunning = false
+    if _G.StartAutoUpgradeForTowers then
+        _G.StartAutoUpgradeForTowers(GameTowers, "Casino")
+    end
 end
 
 -- ═══════════════════════════════════════════════════════
