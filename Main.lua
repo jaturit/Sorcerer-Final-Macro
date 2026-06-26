@@ -20,7 +20,7 @@ local modules = {
     "CasinoMacro.lua",  -- 3. Casino Door Tracker, Waypoints, Record/Play, Dashboard, Webhook
     "AntiDetect.lua",   -- 4. Anti-Detection + Hook System (recording hooks)
     "Utilities.lua",    -- 5. Wave Tracker, Fast Vote Skip, Event Card, Rejoin, IsInLobby
-    "Automation.lua",   -- 6. AutoSkip, Game End, Auto Replay, Auto Lobby, Auto Join Casino/Raid/Gojo/Gauntlet
+    "Automation.lua",   -- 6. AutoSkip, Game End, Auto Replay, Auto Lobby, Auto Join Casino/Raid/Gojo
     "StoryMode.lua",    -- 7. Auto Story + AI Tower Placement + Anti-AFK
     "MacroCore.lua",    -- 8. RunMacroLogic v3.2 NO SKIP
     "UI_Full.lua",      -- 9. Complete UI (LoadMainUI: all tabs)

@@ -1,4 +1,4 @@
--- [[ 📦 Automation.lua - AutoSkip, Game End, Auto Replay, Auto Lobby, Auto Join Casino/Raid/Gojo/Gauntlet ]]
+-- [[ 📦 Automation.lua - AutoSkip, Game End, Auto Replay, Auto Lobby, Auto Join Casino/Raid/Gojo ]]
 -- Module 6 of 12 | Sorcerer Final Macro - Modular Edition
 
 local Player = _G._Player
@@ -9,53 +9,6 @@ local RandomDelay = _G.RandomDelay
 local SendWebhook = _G.SendWebhook
 local GetCurrentMapName = _G.GetCurrentMapName
 local RejoinVIPServer = _G.RejoinVIPServer
-
-local function AutoJoinGauntletOnce()
-    local gauntletTPs = workspace:FindFirstChild("Gauntletteleporters")
-    if not gauntletTPs then return false end
-
-    local targetElevator = gauntletTPs:FindFirstChild("Elevator4")
-    if not targetElevator then return false end
-
-    local char = Player.Character
-    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char and char:FindFirstChild("Humanoid")
-    if rootPart then
-        local entrance = targetElevator:FindFirstChild("Teleports") and targetElevator.Teleports:FindFirstChild("Entrance")
-        if entrance then
-            rootPart.CFrame = entrance.CFrame
-            task.wait(0.3)
-            if humanoid then
-                local basePos = entrance.Position
-                local offsets = {
-                    Vector3.new(2,0,0), Vector3.new(-2,0,0),
-                    Vector3.new(0,0,2), Vector3.new(0,0,-2),
-                    Vector3.new(0,0,0)
-                }
-                for _, offset in ipairs(offsets) do
-                    humanoid:MoveTo(basePos + offset)
-                    task.wait(0.3)
-                end
-            end
-            task.wait(0.3)
-        end
-    end
-
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    if remotes and remotes:FindFirstChild("GauntletTeleporters") then
-        local gauntlet = remotes.GauntletTeleporters
-        if gauntlet:FindFirstChild("ChooseStage") then
-            gauntlet.ChooseStage:FireServer(targetElevator, false)
-            task.wait(0.5)
-        end
-        if gauntlet:FindFirstChild("Start") then
-            gauntlet.Start:FireServer(targetElevator)
-            return true
-        end
-    end
-
-    return false
-end
 
 -- ═══════════════════════════════════════════════════════
 -- 🤖 AUTO SKIP
@@ -567,23 +520,6 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════
--- 🌀 AUTO JOIN GAUNTLET SYSTEM
--- ═══════════════════════════════════════════════════════
-
-task.spawn(function()
-    while true do
-        pcall(function()
-            if _G.AutoJoinGauntlet then
-                if AutoJoinGauntletOnce() then
-                    print("🌀 Auto Join GAUNTLET: เข้าด่านแล้ว")
-                end
-            end
-        end)
-        task.wait(2 + math.random() * 1)
-    end
-end)
-
--- ═══════════════════════════════════════════════════════
 -- 🌾 GOOD FARM (Auto All Farm Queue System)
 -- ═══════════════════════════════════════════════════════
 
@@ -747,7 +683,6 @@ local function LoadGoodFarmState()
                     _G.AutoEventMacro = false
                     _G.AutoEventEquip = false
                     _G.AutoJoinCasino = false
-                    _G.AutoJoinGauntlet = false
                     _G.AutoCasinoPlay = false
                     _G.AutoCasinoEnabled = false
                     _G.AutoPlay = false
@@ -854,7 +789,6 @@ task.spawn(function()
             _G.AutoCasinoEnabled = false
             _G.AutoCasinoPlay = false
             _G.AutoJoinCasino = false
-            _G.AutoJoinGauntlet = false
             
             if _G.SetEventToggle then _G.SetEventToggle(false) end
             if _G.SetEventMacroToggle then _G.SetEventMacroToggle(false) end
@@ -967,7 +901,44 @@ task.spawn(function()
                 _G.SaveConfig()
 
             elseif mode == "InfiniteNew" then
-                AutoJoinGauntletOnce()
+                -- Infinite New (Gauntlet): Copy teleport จาก Casino + remote จากผู้ใช้
+                local gauntletTPs = workspace:FindFirstChild("Gauntletteleporters")
+                if gauntletTPs then
+                    local targetElevator = gauntletTPs:FindFirstChild("Elevator4")
+                    if targetElevator then
+                        local char = Player.Character
+                        local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+                        local humanoid = char and char:FindFirstChild("Humanoid")
+                        if rootPart then
+                            local entrance = targetElevator:FindFirstChild("Teleports") and targetElevator.Teleports:FindFirstChild("Entrance")
+                            if entrance then
+                                rootPart.CFrame = entrance.CFrame
+                                task.wait(0.3)
+                                if humanoid then
+                                    local basePos = entrance.Position
+                                    local offsets = {
+                                        Vector3.new(2,0,0), Vector3.new(-2,0,0),
+                                        Vector3.new(0,0,2), Vector3.new(0,0,-2),
+                                        Vector3.new(0,0,0)
+                                    }
+                                    for _, offset in ipairs(offsets) do humanoid:MoveTo(basePos + offset); task.wait(0.3) end
+                                end
+                                task.wait(0.3)
+                            end
+                        end
+                        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                        if remotes and remotes:FindFirstChild("GauntletTeleporters") then
+                            local gauntlet = remotes.GauntletTeleporters
+                            if gauntlet:FindFirstChild("ChooseStage") then
+                                gauntlet.ChooseStage:FireServer(targetElevator, false)
+                                task.wait(0.5)
+                            end
+                            if gauntlet:FindFirstChild("Start") then
+                                gauntlet.Start:FireServer(targetElevator)
+                            end
+                        end
+                    end
+                end
 
             end
 
@@ -997,7 +968,6 @@ task.spawn(function()
                     _G.AutoCasinoEnabled = false
                     _G.AutoCasinoPlay = false
                     _G.AutoJoinCasino = false
-                    _G.AutoJoinGauntlet = false
                     _G.AutoEvent = false
                     _G.AutoEventMacro = false
                     _G.AutoEventEquip = false
