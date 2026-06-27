@@ -37,6 +37,32 @@ print("║  📦 Loading " .. #modules .. " modules...                    ║")
 print("╚══════════════════════════════════════════════╝")
 print("")
 
+-- ═══════════════════════════════════════════════════════
+-- 🌐 UNIVERSAL HTTP FETCH (supports most executors)
+-- ═══════════════════════════════════════════════════════
+
+local function httpFetch(url)
+    -- Method 1: request() / http_request() (Fluxus, Hydrogen, most modern executors)
+    if request then
+        return request({Url = url, Method = "GET"}).Body
+    elseif http_request then
+        return http_request({Url = url, Method = "GET"}).Body
+    end
+    -- Method 2: syn.request (Synapse X)
+    if syn and syn.request then
+        return syn.request({Url = url, Method = "GET"}).Body
+    end
+    -- Method 3: game:HttpGet (some executors inject this)
+    if pcall(function() return game.HttpGet end) then
+        return game:HttpGet(url)
+    end
+    -- Method 4: httpget global (fallback)
+    if httpget then
+        return httpget(url)
+    end
+    error("No HTTP method available - your executor may not support HTTP requests")
+end
+
 local startTime = tick()
 local loadedCount = 0
 
@@ -44,7 +70,7 @@ for i, moduleName in ipairs(modules) do
     local url = GITHUB_BASE .. moduleName
     local status, err = pcall(function()
         print("📥 [" .. i .. "/" .. #modules .. "] Loading " .. moduleName .. "...")
-        local code = game:HttpGet(url .. "?t=" .. tostring(os.time()))
+        local code = httpFetch(url .. "?t=" .. tostring(os.time()))
         if not code or code == "" or code:find("404: Not Found") then
             error("Failed to fetch: " .. moduleName)
         end
