@@ -37,6 +37,24 @@ print("║  📦 Loading " .. #modules .. " modules...                    ║")
 print("╚══════════════════════════════════════════════╝")
 print("")
 
+-- 🔍 DEBUG: Hook game:HttpGet to log ALL HTTP calls from loaded modules
+local _originalHttpGet = game.HttpGet
+local _httpCallCount = 0
+game.HttpGet = function(self, url, ...)
+    _httpCallCount = _httpCallCount + 1
+    print("🌐 [HTTP #" .. _httpCallCount .. "] GET: " .. tostring(url))
+    local ok, result = pcall(_originalHttpGet, self, url, ...)
+    if not ok then
+        warn("🔴 [HTTP #" .. _httpCallCount .. "] ERROR: " .. tostring(result) .. " | URL: " .. tostring(url))
+        error(result)
+    end
+    if result and (result:find("404") or result:find("Not Found")) then
+        warn("🔴 [HTTP #" .. _httpCallCount .. "] GOT 404 RESPONSE | URL: " .. tostring(url))
+    end
+    print("🟢 [HTTP #" .. _httpCallCount .. "] OK (" .. #tostring(result) .. " bytes)")
+    return result
+end
+
 local startTime = tick()
 local loadedCount = 0
 
