@@ -37,67 +37,19 @@ print("║  📦 Loading " .. #modules .. " modules...                    ║")
 print("╚══════════════════════════════════════════════╝")
 print("")
 
--- 🔍 DEBUG: Hook game:HttpGet to log ALL HTTP calls from loaded modules
-local _originalHttpGet = game.HttpGet
-local _httpCallCount = 0
-game.HttpGet = function(self, url, ...)
-    _httpCallCount = _httpCallCount + 1
-    print("🌐 [HTTP #" .. _httpCallCount .. "] GET: " .. tostring(url))
-    local ok, result = pcall(_originalHttpGet, self, url, ...)
-    if not ok then
-        warn("🔴 [HTTP #" .. _httpCallCount .. "] ERROR: " .. tostring(result) .. " | URL: " .. tostring(url))
-        error(result)
-    end
-    if result and (result:find("404") or result:find("Not Found")) then
-        warn("🔴 [HTTP #" .. _httpCallCount .. "] GOT 404 RESPONSE | URL: " .. tostring(url))
-    end
-    print("🟢 [HTTP #" .. _httpCallCount .. "] OK (" .. #tostring(result) .. " bytes)")
-    return result
-end
-
 local startTime = tick()
 local loadedCount = 0
-
--- 🔧 Safe HttpGet with retry (some executors reject ?t= cache param)
-local function SafeHttpGet(url, moduleName)
-    -- Try 1: with cache-busting parameter
-    local ok1, result1 = pcall(function()
-        return game:HttpGet(url .. "?t=" .. tostring(os.time()))
-    end)
-    if ok1 and result1 and result1 ~= "" and not result1:find("404: Not Found") then
-        return result1
-    end
-    
-    -- Try 2: without cache-busting parameter
-    warn("⚠️ Retry without cache param: " .. moduleName)
-    local ok2, result2 = pcall(function()
-        return game:HttpGet(url)
-    end)
-    if ok2 and result2 and result2 ~= "" and not result2:find("404: Not Found") then
-        return result2
-    end
-    
-    -- Try 3: wait and retry once more
-    warn("⚠️ Final retry after delay: " .. moduleName)
-    task.wait(2)
-    local ok3, result3 = pcall(function()
-        return game:HttpGet(url)
-    end)
-    if ok3 and result3 and result3 ~= "" and not result3:find("404: Not Found") then
-        return result3
-    end
-    
-    error("Failed to fetch after 3 attempts: " .. moduleName .. " | URL: " .. url .. " | Last error: " .. tostring(result3 or result2 or result1))
-end
 
 for i, moduleName in ipairs(modules) do
     local url = GITHUB_BASE .. moduleName
     local status, err = pcall(function()
         print("📥 [" .. i .. "/" .. #modules .. "] Loading " .. moduleName .. "...")
-        local code = SafeHttpGet(url, moduleName)
+        local code = game:HttpGet(url .. "?t=" .. tostring(os.time()))
+        if not code or code == "" or code:find("404: Not Found") then
+            error("Failed to fetch: " .. moduleName)
+        end
         loadstring(code)()
         loadedCount = loadedCount + 1
-        print("✅ [" .. i .. "/" .. #modules .. "] " .. moduleName .. " loaded!")
     end)
     if not status then
         warn("❌ Failed to load " .. moduleName .. ": " .. tostring(err))
@@ -107,8 +59,6 @@ for i, moduleName in ipairs(modules) do
             return
         end
     end
-    -- Small delay between modules to avoid rate limiting
-    task.wait(0.3)
 end
 
 local elapsed = math.floor((tick() - startTime) * 100) / 100
