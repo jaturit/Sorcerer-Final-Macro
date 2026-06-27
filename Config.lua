@@ -75,6 +75,7 @@ _G.AutoJoinCasino = false
 _G.AutoToLobby = false
 _G.AutoJoinRaid = false
 _G.AutoJoinRaidGojo = false
+_G.AutoJoinGauntlet = false
 _G.AutoCasinoPlay = false
 _G.AutoCasinoEnabled = false  -- ผู้ใช้ต้องการ auto (ไม่ reset ตอน macro จบ)
 _G.CasinoSelectedFile = "None"
@@ -425,12 +426,12 @@ local function ShowScreenCover()
     local backgroundImage = Instance.new("ImageLabel", cover)
     backgroundImage.Name = "LagSaverBackgroundImage"
     backgroundImage.AnchorPoint = Vector2.new(0.5, 0.5)
-    backgroundImage.Size = UDim2.new(0.82, 0, 0.82, 0)
+    backgroundImage.Size = UDim2.new(1, 0, 1, 0)
     backgroundImage.Position = UDim2.new(0.5, 0, 0.5, 0)
     backgroundImage.BackgroundTransparency = 1
     backgroundImage.Image = NormalizeImageId(_G.LagSaverBackgroundImage or LAGSAVER_BACKGROUND_IMAGE)
-    backgroundImage.ImageTransparency = 0.03
-    backgroundImage.ScaleType = Enum.ScaleType.Fit
+    backgroundImage.ImageTransparency = 0.16
+    backgroundImage.ScaleType = Enum.ScaleType.Crop
     backgroundImage.Visible = backgroundImage.Image ~= ""
     backgroundImage.ZIndex = 10000
     pcall(function()
@@ -441,7 +442,7 @@ local function ShowScreenCover()
     backgroundDim.Name = "LagSaverBackgroundDim"
     backgroundDim.Size = UDim2.new(1, 0, 1, 0)
     backgroundDim.BackgroundColor3 = Color3.fromRGB(3, 5, 10)
-    backgroundDim.BackgroundTransparency = 0.64
+    backgroundDim.BackgroundTransparency = 0.5
     backgroundDim.BorderSizePixel = 0
     backgroundDim.ZIndex = 10001
 
@@ -482,7 +483,7 @@ local function ShowScreenCover()
     panel.Size = UDim2.new(0.78, 0, 0.86, 0)
     panel.Position = UDim2.new(0.5, 0, 0.5, 0)
     panel.BackgroundColor3 = Color3.fromRGB(8, 10, 18)
-    panel.BackgroundTransparency = 0.16
+    panel.BackgroundTransparency = 0.34
     panel.BorderSizePixel = 0
     panel.ZIndex = 10002
     Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
@@ -558,7 +559,7 @@ local function ShowScreenCover()
     dashboardLabel.Size = UDim2.new(1, -60, 0, 44)
     dashboardLabel.Position = UDim2.new(0, 34, 0, 218)
     dashboardLabel.BackgroundColor3 = Color3.fromRGB(12, 15, 24)
-    dashboardLabel.BackgroundTransparency = 0.15
+    dashboardLabel.BackgroundTransparency = 0.24
     dashboardLabel.TextColor3 = Color3.fromRGB(230, 240, 245)
     dashboardLabel.Font = Enum.Font.Gotham
     dashboardLabel.TextSize = 12
@@ -586,7 +587,7 @@ local function ShowScreenCover()
     resultLabel.Size = UDim2.new(1, -60, 1, -326)
     resultLabel.Position = UDim2.new(0, 34, 0, 298)
     resultLabel.BackgroundColor3 = Color3.fromRGB(12, 15, 24)
-    resultLabel.BackgroundTransparency = 0.15
+    resultLabel.BackgroundTransparency = 0.24
     resultLabel.TextColor3 = Color3.fromRGB(230, 240, 245)
     resultLabel.Font = Enum.Font.Gotham
     resultLabel.TextSize = 11
@@ -652,6 +653,21 @@ local function ShowScreenCover()
                 pcall(function()
                     ContentProvider:PreloadAsync({backgroundImage})
                 end)
+            end
+            task.wait(0.75)
+            loaded = false
+            pcall(function()
+                loaded = backgroundImage.IsLoaded
+            end)
+            if not loaded and backgroundImage and backgroundImage.Parent then
+                local uiBackground = NormalizeImageId(_G.UIBackgroundImage or "")
+                if uiBackground ~= "" and uiBackground ~= backgroundImage.Image then
+                    backgroundImage.Image = uiBackground
+                    backgroundImage.Visible = true
+                    pcall(function()
+                        ContentProvider:PreloadAsync({backgroundImage})
+                    end)
+                end
             end
         end
     end)
@@ -807,6 +823,7 @@ local function SaveConfig()
             AutoToLobby = _G.AutoToLobby,
             AutoJoinRaid = _G.AutoJoinRaid,
             AutoJoinRaidGojo = _G.AutoJoinRaidGojo,
+            AutoJoinGauntlet = _G.AutoJoinGauntlet,
             AutoCasinoPlay = _G.AutoCasinoPlay,
             AutoCasinoEnabled = _G.AutoCasinoEnabled,
             CasinoSelectedFile = _G.CasinoSelectedFile,
@@ -857,6 +874,7 @@ local function LoadConfig()
             _G.AutoToLobby = data.AutoToLobby or false
             _G.AutoJoinRaid = data.AutoJoinRaid or false
             _G.AutoJoinRaidGojo = data.AutoJoinRaidGojo or false
+            _G.AutoJoinGauntlet = data.AutoJoinGauntlet or false
             _G.AutoCasinoPlay = data.AutoCasinoPlay or false
             _G.AutoCasinoEnabled = data.AutoCasinoEnabled or false
             _G.CasinoSelectedFile = data.CasinoSelectedFile or "None"
