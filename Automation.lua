@@ -307,7 +307,16 @@ task.spawn(function()
                             for _, v in pairs(endScreen:GetChildren()) do
                                 if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
                                     local name = v.Name:lower()
-                                    local text = v:IsA("TextButton") and v.Text:lower() or ""
+                                    local text = ""
+                                    if v:IsA("TextButton") then
+                                        text = v.Text:lower()
+                                    else
+                                        for _, child in pairs(v:GetDescendants()) do
+                                            if child:IsA("TextLabel") then
+                                                text = text .. " " .. child.Text:lower()
+                                            end
+                                        end
+                                    end
                                     if name:find("replay") or name:find("playagain") or name:find("lobby") or name:find("exit") or
                                        text:find("replay") or text:find("play again") or text:find("back to lobby") or
                                        text:find("เล่นอีกครั้ง") or text:find("กลับไปที่ล็อบบี้") then
@@ -375,7 +384,16 @@ task.spawn(function()
                             for _, v in pairs(endScreen:GetChildren()) do
                                 if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
                                     local name = v.Name:lower()
-                                    local text = v:IsA("TextButton") and v.Text:lower() or ""
+                                    local text = ""
+                                    if v:IsA("TextButton") then
+                                        text = v.Text:lower()
+                                    else
+                                        for _, child in pairs(v:GetDescendants()) do
+                                            if child:IsA("TextLabel") then
+                                                text = text .. " " .. child.Text:lower()
+                                            end
+                                        end
+                                    end
                                     if name:find("lobby") or name:find("exit") or
                                        text:find("go back to lobby") or text:find("back to lobby") or
                                        text:find("กลับไปที่ล็อบบี้") then
