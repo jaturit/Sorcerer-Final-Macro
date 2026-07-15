@@ -362,14 +362,18 @@ task.spawn(function()
                     local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
                     if gameGui then
                         local endScreen = gameGui:FindFirstChild("EndScreen")
+                        -- วิธี 1: เช็ค EndScreen Visible โดยตรง
                         if endScreen and endScreen.Visible then
                             isGameOver = true
                         end
-                        if not isGameOver and endScreen and endScreen.Visible then
-                            for _, v in pairs(endScreen and endScreen:GetChildren() or {}) do
-                                if v:IsA("TextButton") and v.Visible then
-                                    local text = v.Text:lower()
-                                    if text:find("go back to lobby") or text:find("back to lobby") then
+                        -- วิธี 2: เช็คปุ่ม lobby/exit จาก EndScreen children (fallback)
+                        if not isGameOver and endScreen then
+                            for _, v in pairs(endScreen:GetChildren()) do
+                                if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
+                                    local name = v.Name:lower()
+                                    local text = v:IsA("TextButton") and v.Text:lower() or ""
+                                    if name:find("lobby") or name:find("exit") or
+                                       text:find("go back to lobby") or text:find("back to lobby") then
                                         isGameOver = true
                                         break
                                     end
