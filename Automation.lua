@@ -125,7 +125,10 @@ local function SendGameEndNotification()
         if contentFrame then
             local t = contentFrame:FindFirstChild("Title")
             local s = contentFrame:FindFirstChild("Subtitle")
-            if t then isVictory = t.Text:upper():find("VICTORY") ~= nil end
+            if t then 
+                local text = t.Text:upper()
+                isVictory = text:find("VICTORY") ~= nil or text:find("ชัยชนะ") ~= nil
+            end
             if s then subtitle = s.Text end
         end
 
@@ -306,7 +309,8 @@ task.spawn(function()
                                     local name = v.Name:lower()
                                     local text = v:IsA("TextButton") and v.Text:lower() or ""
                                     if name:find("replay") or name:find("playagain") or name:find("lobby") or name:find("exit") or
-                                       text:find("replay") or text:find("play again") or text:find("back to lobby") then
+                                       text:find("replay") or text:find("play again") or text:find("back to lobby") or
+                                       text:find("เล่นอีกครั้ง") or text:find("กลับไปที่ล็อบบี้") then
                                         isGameEndVisible = true
                                         break
                                     end
@@ -373,7 +377,8 @@ task.spawn(function()
                                     local name = v.Name:lower()
                                     local text = v:IsA("TextButton") and v.Text:lower() or ""
                                     if name:find("lobby") or name:find("exit") or
-                                       text:find("go back to lobby") or text:find("back to lobby") then
+                                       text:find("go back to lobby") or text:find("back to lobby") or
+                                       text:find("กลับไปที่ล็อบบี้") then
                                         isGameOver = true
                                         break
                                     end

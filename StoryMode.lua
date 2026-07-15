@@ -803,7 +803,8 @@ local function IsGameEnded()
                     if name:find("replay") or name:find("playagain") or name:find("retry") or
                        name:find("lobby") or name:find("exit") or
                        text:find("replay") or text:find("play again") or text:find("retry") or
-                       text:find("go back to lobby") or text:find("back to lobby") then
+                       text:find("go back to lobby") or text:find("back to lobby") or
+                       text:find("เล่นอีกครั้ง") or text:find("กลับไปที่ล็อบบี้") then
                         if v.Parent and v.Parent.Visible ~= false then
                             ended = true
                             break
