@@ -89,24 +89,9 @@ end)
 -- ═══════════════════════════════════════════════════════
 
 local function SendGameEndNotification()
-    local hasWebhook = _G.DiscordURL and _G.DiscordURL ~= ""
-    if not hasWebhook then
-        if _G.AutoStory then
-            pcall(function()
-                local nextStage, nextDiff = _G.GetNextStoryStage()
-                if nextStage then
-                    _G.StoryCurrentStage = nextStage
-                    _G.StoryCurrentDifficulty = nextDiff
-                    SaveConfig()
-                    print("📖 [Story] เลื่อนด่าน → " .. nextDiff .. " Stage " .. nextStage)
-                else
-                    _G.AutoStory = false
-                    SaveConfig()
-                    print("🏆 [Story] Chapter ครบแล้ว!")
-                end
-            end)
-        end
-    end
+    -- หมายเหตุ: การเลื่อนด่าน Story จัดการโดย WaitForGameEndAndAdvance() ใน StoryMode.lua เท่านั้น
+    -- เพื่อป้องกัน GetNextStoryStage() ถูกเรียกซ้ำ 2 ครั้ง (ด่านเลื่อน 2 ด่าน)
+    -- และป้องกัน _G.AutoStory ถูกปิดก่อนที่ StoryMode จะทัน fire ExitGame
 
     task.wait(1.5)
 
