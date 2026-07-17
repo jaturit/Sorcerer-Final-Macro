@@ -89,9 +89,24 @@ end)
 -- ═══════════════════════════════════════════════════════
 
 local function SendGameEndNotification()
-    -- หมายเหตุ: การเลื่อนด่าน Story จัดการโดย WaitForGameEndAndAdvance() ใน StoryMode.lua เท่านั้น
-    -- เพื่อป้องกัน GetNextStoryStage() ถูกเรียกซ้ำ 2 ครั้ง (ด่านเลื่อน 2 ด่าน)
-    -- และป้องกัน _G.AutoStory ถูกปิดก่อนที่ StoryMode จะทัน fire ExitGame
+    local hasWebhook = _G.DiscordURL and _G.DiscordURL ~= ""
+    if not hasWebhook then
+        if _G.AutoStory then
+            pcall(function()
+                local nextStage, nextDiff = _G.GetNextStoryStage()
+                if nextStage then
+                    _G.StoryCurrentStage = nextStage
+                    _G.StoryCurrentDifficulty = nextDiff
+                    SaveConfig()
+                    print("📖 [Story] เลื่อนด่าน → " .. nextDiff .. " Stage " .. nextStage)
+                else
+                    _G.AutoStory = false
+                    SaveConfig()
+                    print("🏆 [Story] Chapter ครบแล้ว!")
+                end
+            end)
+        end
+    end
 
     task.wait(1.5)
 
@@ -110,10 +125,7 @@ local function SendGameEndNotification()
         if contentFrame then
             local t = contentFrame:FindFirstChild("Title")
             local s = contentFrame:FindFirstChild("Subtitle")
-            if t then 
-                local text = t.Text:upper()
-                isVictory = text:find("VICTORY") ~= nil or text:find("ชัยชนะ") ~= nil
-            end
+            if t then isVictory = t.Text:upper():find("VICTORY") ~= nil end
             if s then subtitle = s.Text end
         end
 
@@ -292,19 +304,9 @@ task.spawn(function()
                             for _, v in pairs(endScreen:GetChildren()) do
                                 if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
                                     local name = v.Name:lower()
-                                    local text = ""
-                                    if v:IsA("TextButton") then
-                                        text = v.Text:lower()
-                                    else
-                                        for _, child in pairs(v:GetDescendants()) do
-                                            if child:IsA("TextLabel") then
-                                                text = text .. " " .. child.Text:lower()
-                                            end
-                                        end
-                                    end
+                                    local text = v:IsA("TextButton") and v.Text:lower() or ""
                                     if name:find("replay") or name:find("playagain") or name:find("lobby") or name:find("exit") or
-                                       text:find("replay") or text:find("play again") or text:find("back to lobby") or
-                                       text:find("เล่นอีกครั้ง") or text:find("กลับไปที่ล็อบบี้") then
+                                       text:find("replay") or text:find("play again") or text:find("back to lobby") then
                                         isGameEndVisible = true
                                         break
                                     end
@@ -360,28 +362,14 @@ task.spawn(function()
                     local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
                     if gameGui then
                         local endScreen = gameGui:FindFirstChild("EndScreen")
-                        -- วิธี 1: เช็ค EndScreen Visible โดยตรง
                         if endScreen and endScreen.Visible then
                             isGameOver = true
                         end
-                        -- วิธี 2: เช็คปุ่ม lobby/exit จาก EndScreen children (fallback)
-                        if not isGameOver and endScreen then
-                            for _, v in pairs(endScreen:GetChildren()) do
-                                if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
-                                    local name = v.Name:lower()
-                                    local text = ""
-                                    if v:IsA("TextButton") then
-                                        text = v.Text:lower()
-                                    else
-                                        for _, child in pairs(v:GetDescendants()) do
-                                            if child:IsA("TextLabel") then
-                                                text = text .. " " .. child.Text:lower()
-                                            end
-                                        end
-                                    end
-                                    if name:find("lobby") or name:find("exit") or
-                                       text:find("go back to lobby") or text:find("back to lobby") or
-                                       text:find("กลับไปที่ล็อบบี้") then
+                        if not isGameOver and endScreen and endScreen.Visible then
+                            for _, v in pairs(endScreen and endScreen:GetChildren() or {}) do
+                                if v:IsA("TextButton") and v.Visible then
+                                    local text = v.Text:lower()
+                                    if text:find("go back to lobby") or text:find("back to lobby") then
                                         isGameOver = true
                                         break
                                     end

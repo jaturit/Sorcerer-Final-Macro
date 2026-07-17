@@ -799,21 +799,11 @@ local function IsGameEnded()
             for _, v in pairs(Player.PlayerGui:GetDescendants()) do
                 if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
                     local name = v.Name:lower()
-                    local text = ""
-                    if v:IsA("TextButton") then
-                        text = v.Text:lower()
-                    else
-                        for _, child in pairs(v:GetDescendants()) do
-                            if child:IsA("TextLabel") then
-                                text = text .. " " .. child.Text:lower()
-                            end
-                        end
-                    end
+                    local text = v:IsA("TextButton") and v.Text:lower() or ""
                     if name:find("replay") or name:find("playagain") or name:find("retry") or
                        name:find("lobby") or name:find("exit") or
                        text:find("replay") or text:find("play again") or text:find("retry") or
-                       text:find("go back to lobby") or text:find("back to lobby") or
-                       text:find("เล่นอีกครั้ง") or text:find("กลับไปที่ล็อบบี้") then
+                       text:find("go back to lobby") or text:find("back to lobby") then
                         if v.Parent and v.Parent.Visible ~= false then
                             ended = true
                             break
