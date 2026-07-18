@@ -17,32 +17,20 @@ local KeySystem = {
 }
 
 function KeySystem:UploadToGitHub(keysTable)
-    local ok, response = pcall(function()
-        return Request({
+    local success = pcall(function()
+        Request({
             Url = "https://api.github.com/gists/" .. self.GistID,
             Method = "PATCH",
             Headers = {
                 ["Authorization"] = "Bearer " .. self.GitHubToken,
-                ["Accept"] = "application/vnd.github+json",
-                ["Content-Type"] = "application/json",
-                ["User-Agent"] = "Macro-Pro-KeyAuth"
+                ["Content-Type"] = "application/json"
             },
             Body = HttpService:JSONEncode({
-                files = {
-                    ["keys.json"] = {
-                        content = HttpService:JSONEncode(keysTable)
-                    }
-                }
+                files = { ["keys.json"] = { content = HttpService:JSONEncode(keysTable) } }
             })
         })
     end)
-
-    if not ok or type(response) ~= "table" then
-        return false
-    end
-
-    local status = tonumber(response.StatusCode or response.Status or 0) or 0
-    return status >= 200 and status < 300
+    return success
 end
 
 function KeySystem:LoadKeys()
@@ -78,20 +66,21 @@ function KeySystem:ValidateKey(key)
         return false, "ไม่สามารถอ่านรหัสเครื่องได้ กรุณาเปิดเกมใหม่", 0
     end
 
-    -- รองรับข้อมูลเดิม: hwid -> boundHwid
-    local boundHwid = tostring(keyData.boundHwid or keyData.hwid or "")
     local changed = false
 
-    -- Activate คีย์ที่ยังไม่เคยใช้
+    -- รองรับทั้ง field เก่าและใหม่
+    local boundHwid = tostring(keyData.boundHwid or keyData.hwid or "")
+
+    -- คีย์ที่ยังไม่เคยใช้
     if keyData.Unused == true then
         local duration = tonumber(keyData.Duration) or 30
         keyData.Unused = nil
         keyData.Active = true
         keyData.ExpiresAt = now + (duration * 86400)
         keyData.ActivatedAt = now
-        boundHwid = hwid
+        keyData.hwid = hwid
         keyData.boundHwid = hwid
-        keyData.hwid = hwid -- คง field เดิมไว้เพื่อให้หน้าแอดมินเก่ายังอ่านได้
+        boundHwid = hwid
         changed = true
     end
 
@@ -110,29 +99,32 @@ function KeySystem:ValidateKey(key)
     end
 
     if boundHwid == "" then
-        keyData.boundHwid = hwid
         keyData.hwid = hwid
+        keyData.boundHwid = hwid
         boundHwid = hwid
+        changed = true
+    elseif not keyData.boundHwid or keyData.boundHwid == "" then
+        keyData.boundHwid = boundHwid
         changed = true
     end
 
-    -- ระบบจำนวนบัญชี Roblox
+    -- จำกัดจำนวน Roblox Account
     local maxAccounts = math.max(1, tonumber(keyData.maxAccounts) or 1)
     local accounts = type(keyData.accounts) == "table" and keyData.accounts or {}
-    keyData.accounts = accounts
     keyData.maxAccounts = maxAccounts
+    keyData.accounts = accounts
 
-    local foundAccount = nil
-    for _, account in ipairs(accounts) do
-        if tostring(account.userId or "") == userId then
-            foundAccount = account
+    local account = nil
+    for _, item in ipairs(accounts) do
+        if tostring(item.userId or "") == userId then
+            account = item
             break
         end
     end
 
-    if foundAccount then
-        foundAccount.username = username
-        foundAccount.lastSeenAt = now
+    if account then
+        account.username = username
+        account.lastSeenAt = now
         changed = true
     else
         if #accounts >= maxAccounts then
@@ -153,15 +145,15 @@ function KeySystem:ValidateKey(key)
     keyData.LastLoginAt = now
     keyData.LastUsername = username
     keyData.LastUserId = userId
-    keyData.LastClientVersion = "2.0.1-gist"
+    keyData.LastClientVersion = "2.0.2-gist"
     keys[key] = keyData
 
-    -- ต้องบันทึกสำเร็จก่อนจึงอนุญาตเข้า เพื่อไม่ให้บัญชีหายจาก keys.json
+    -- ใช้วิธีเดิมที่เคยทำงานกับ Executor:
+    -- ไม่บล็อกการเข้าเกมจากรูปแบบ response ของ request()
     if changed then
-        local uploaded = self:UploadToGitHub(keys)
-        if not uploaded then
-            return false, "เชื่อมต่อฐานข้อมูล GitHub ไม่สำเร็จ กรุณาลองใหม่", 0
-        end
+        task.spawn(function()
+            self:UploadToGitHub(keys)
+        end)
     end
 
     local remainingSeconds = expiresAt - now
