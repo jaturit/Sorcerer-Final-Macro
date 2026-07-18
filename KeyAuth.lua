@@ -82,13 +82,26 @@ function KeySystem:ValidateKey(key)
         clientVersion = self.Version,
     }
 
+    -- ใช้ GET แทน POST เพราะ Apps Script ContentService มี redirect
+    -- และ Executor บางตัวตาม POST redirect แล้วกลายเป็น HTTP 405
+    local query = table.concat({
+        "api=validate",
+        "key=" .. HttpService:UrlEncode(payload.key),
+        "hwid=" .. HttpService:UrlEncode(payload.hwid),
+        "userId=" .. HttpService:UrlEncode(payload.userId),
+        "username=" .. HttpService:UrlEncode(payload.username),
+        "displayName=" .. HttpService:UrlEncode(payload.displayName),
+        "placeId=" .. HttpService:UrlEncode(payload.placeId),
+        "jobId=" .. HttpService:UrlEncode(payload.jobId),
+        "clientVersion=" .. HttpService:UrlEncode(payload.clientVersion),
+    }, "&")
+
     local ok, result = requestJson({
-        Url = self.ApiURL,
-        Method = "POST",
+        Url = self.ApiURL .. "?" .. query,
+        Method = "GET",
         Headers = {
-            ["Content-Type"] = "application/json",
+            ["Accept"] = "application/json",
         },
-        Body = HttpService:JSONEncode(payload),
     })
 
     if not ok then
