@@ -4,7 +4,6 @@
 local Player = _G._Player
 local ReplicatedStorage = _G._Services.ReplicatedStorage
 local SaveConfig = _G.SaveConfig
-local RejoinVIPServer = _G.RejoinVIPServer
 local IsInLobby = _G.IsInLobby
 
 -- ═══════════════════════════════════════════════════════
@@ -781,11 +780,41 @@ local function GetNextStoryStage()
                 _G.StoryChapter = chapter + 1
                 return 1, "Hellmode"
             else
-                -- จบทั้งหมด
-                return nil, nil
+                -- Hell 15 is the highest stage: keep farming the same stage.
+                return 5, "Hellmode"
             end
         end
     end
+end
+
+local function GetStoryEndResult()
+    local result = nil
+    pcall(function()
+        local gameGui = Player.PlayerGui:FindFirstChild("GameGui")
+        local endScreen = gameGui and gameGui:FindFirstChild("EndScreen")
+        if not endScreen or not endScreen.Visible then return end
+
+        local texts = {}
+        local content = endScreen:FindFirstChild("Content")
+        local title = content and content:FindFirstChild("Title")
+        if title and title:IsA("TextLabel") then
+            table.insert(texts, title.Text)
+        end
+        for _, item in ipairs(endScreen:GetDescendants()) do
+            if item:IsA("TextLabel") or item:IsA("TextButton") then
+                table.insert(texts, item.Text)
+            end
+        end
+
+        local allText = table.concat(texts, " "):upper()
+        if allText:find("VICTORY", 1, true) or allText:find("YOU WIN", 1, true) then
+            result = "victory"
+        elseif allText:find("DEFEAT", 1, true) or allText:find("GAME OVER", 1, true)
+            or allText:find("YOU LOST", 1, true) then
+            result = "defeat"
+        end
+    end)
+    return result
 end
 
 local function IsGameEnded()
@@ -816,6 +845,30 @@ local function IsGameEnded()
     return ended
 end
 
+local function ApplyPendingStoryResult()
+    local pending = _G.StoryPendingResult
+    if pending ~= "victory" and pending ~= "defeat" then return end
+
+    if pending == "victory" then
+        local oldChapter = _G.StoryChapter
+        local oldStage = _G.StoryCurrentStage
+        local oldDiff = _G.StoryCurrentDifficulty
+        local nextStage, nextDiff = GetNextStoryStage()
+        _G.StoryCurrentStage = nextStage
+        _G.StoryCurrentDifficulty = nextDiff
+        if oldChapter == 3 and oldStage == 5 and oldDiff == "Hellmode" then
+            print("🏆 [Story] Victory Hell 15 → เล่น Hell 15 ซ้ำ")
+        else
+            print("📖 [Story] Victory → เลื่อนเป็น " .. nextDiff .. " Stage " .. nextStage)
+        end
+    else
+        print("💀 [Story] Defeat → เล่นด่านเดิมซ้ำ")
+    end
+
+    _G.StoryPendingResult = nil
+    SaveConfig()
+end
+
 -- รอจบด่าน + เลื่อน stage + ExitGame (ใช้ร่วมกันทุกจุด)
 local function WaitForGameEndAndAdvance()
     _G.StoryGameEnded = false
@@ -827,27 +880,27 @@ local function WaitForGameEndAndAdvance()
                 local w = 0
                 while not _G._WebhookSentForThisRound and w < 5 do task.wait(0.5); w = w + 0.5 end
             end
-            task.wait(1)
-            -- เลื่อนด่านก่อน ExitGame
-            local nextStage, nextDiff = GetNextStoryStage()
-            if nextStage then
-                _G.StoryCurrentStage = nextStage
-                _G.StoryCurrentDifficulty = nextDiff
-                SaveConfig()
-                print("📖 [Story] เลื่อนด่าน → " .. nextDiff .. " Stage " .. nextStage)
-            else
-                _G.AutoStory = false
-                SaveConfig()
-                print("🏆 [Story] Chapter ครบแล้ว!")
+            -- Wait briefly for the result title, then persist it for the next lobby session.
+            local result = GetStoryEndResult()
+            local resultWait = 0
+            while not result and resultWait < 10 do
+                task.wait(0.5)
+                resultWait = resultWait + 0.5
+                result = GetStoryEndResult()
             end
-            pcall(function()
-                local joinedVIP = RejoinVIPServer()
-                if not joinedVIP then
-                    ReplicatedStorage.Events.ExitGame:FireServer()
-                    print("🚪 [Story] fire ExitGame")
-                end
-            end)
-            task.wait(5)
+            _G.StoryPendingResult = result == "victory" and "victory" or "defeat"
+            SaveConfig()
+            print("🚪 [Story] บันทึกผล " .. _G.StoryPendingResult .. " แล้ว กำลังกลับ Lobby")
+
+            -- ExitGame only. Retry while this server is still alive and not in the lobby.
+            while (_G.AutoStory or _G.StoryMacroMode) and not IsInLobby() do
+                pcall(function()
+                    local events = ReplicatedStorage:FindFirstChild("Events")
+                    local exitGame = events and events:FindFirstChild("ExitGame")
+                    if exitGame then exitGame:FireServer() end
+                end)
+                task.wait(3)
+            end
             break
         end
         task.wait(2)
@@ -859,6 +912,7 @@ task.spawn(function()
     while true do
         pcall(function()
             if _G.AutoStory and IsInLobby() then
+                ApplyPendingStoryResult()
                 local chapter = _G.StoryChapter
                 local stage = _G.StoryCurrentStage
                 local diff = _G.StoryCurrentDifficulty
@@ -906,6 +960,7 @@ task.spawn(function()
     while true do
         pcall(function()
             if _G.StoryMacroMode and IsInLobby() then
+                ApplyPendingStoryResult()
                 local chapter = _G.StoryChapter
                 local stage = _G.StoryCurrentStage
                 local diff = _G.StoryCurrentDifficulty

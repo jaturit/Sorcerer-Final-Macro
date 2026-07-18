@@ -24,7 +24,6 @@ local RandomDelay = _G.RandomDelay
 local SendWebhook = _G.SendWebhook
 local RunMacroLogic = _G.RunMacroLogic
 local ClickEventCard = _G.ClickEventCard
-local RejoinVIPServer = _G.RejoinVIPServer
 local IsInLobby = _G.IsInLobby
 local RunCasinoMacroLogic = _G.RunCasinoMacroLogic
 local SaveCasinoMacro = _G.SaveCasinoMacro
@@ -1571,18 +1570,6 @@ local function LoadMainUI()
 
     createToggle(MainBox, "🚪 Auto To Lobby", _G.AutoToLobby, function(v) _G.AutoToLobby = v; SaveConfig() end)
 
-    _G.PrivateServerLink = _G.PrivateServerLink or ""
-    _G.AutoRejoinPS = _G.AutoRejoinPS or false
-
-    createToggle(MainBox, "🔁 Auto Rejoin Private Server", _G.AutoRejoinPS, function(v)
-        _G.AutoRejoinPS = v
-        SaveConfig()
-    end)
-
-    createInput(MainBox, "PS Link", "วาง link private server...", _G.PrivateServerLink, function(text)
-        _G.PrivateServerLink = text
-        SaveConfig()
-    end)
     createToggle(MainBox, "🔒 Friends Only", _G.StoryFriendsOnly, function(v) _G.StoryFriendsOnly = v; SaveConfig() end)
 
     -- Auto Sell All at Wave

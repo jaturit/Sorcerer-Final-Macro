@@ -94,6 +94,7 @@ _G.StoryFriendsOnly = false
 _G.StoryChapter = 1
 _G.StoryCurrentStage = 1
 _G.StoryCurrentDifficulty = "Normal"
+_G.StoryPendingResult = nil -- persisted before ExitGame, consumed after the new lobby session loads
 
 -- Good Farm (Auto All Farm)
 _G.AutoGoodFarm = false
@@ -830,6 +831,7 @@ local function SaveConfig()
             StoryChapter = _G.StoryChapter,
             StoryCurrentStage = _G.StoryCurrentStage,
             StoryCurrentDifficulty = _G.StoryCurrentDifficulty,
+            StoryPendingResult = _G.StoryPendingResult,
             AutoStory = _G.AutoStory,
             StoryMacroMode = _G.StoryMacroMode,
             StoryFriendsOnly = _G.StoryFriendsOnly,
@@ -844,8 +846,6 @@ local function SaveConfig()
             EventColonyMacros = _G.EventColonyMacros,
             EventCardBlacklist = _G.EventCardBlacklist,
             SmartCardOrder = _G.SmartCardOrder,
-            PrivateServerLink = _G.PrivateServerLink,
-            AutoRejoinPS = _G.AutoRejoinPS,
             AutoGoodFarm = _G.AutoGoodFarm,
             GoodFarmQueue = _G.GoodFarmQueue,
             GoodFarmCurrentMode = _G.GoodFarmCurrentMode,
@@ -882,6 +882,7 @@ local function LoadConfig()
             _G.StoryChapter = data.StoryChapter or 1
             _G.StoryCurrentStage = data.StoryCurrentStage or 1
             _G.StoryCurrentDifficulty = data.StoryCurrentDifficulty or "Normal"
+            _G.StoryPendingResult = data.StoryPendingResult
             _G.AutoStory = data.AutoStory or false
             _G.StoryMacroMode = data.StoryMacroMode or false
             _G.StoryFriendsOnly = data.StoryFriendsOnly or false
@@ -896,8 +897,6 @@ local function LoadConfig()
             _G.EventColonyMacros = data.EventColonyMacros or {}
             _G.EventCardBlacklist = data.EventCardBlacklist or {}
             _G.SmartCardOrder = data.SmartCardOrder or "easy"
-            _G.PrivateServerLink = data.PrivateServerLink or ""
-            _G.AutoRejoinPS = data.AutoRejoinPS or false
             _G.AutoGoodFarm = data.AutoGoodFarm or false
             _G.GoodFarmRoundsDone = data.GoodFarmRoundsDone or 0
             _G.LowPerformanceMode = data.LowPerformanceMode or false

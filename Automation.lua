@@ -8,7 +8,6 @@ local SaveConfig = _G.SaveConfig
 local RandomDelay = _G.RandomDelay
 local SendWebhook = _G.SendWebhook
 local GetCurrentMapName = _G.GetCurrentMapName
-local RejoinVIPServer = _G.RejoinVIPServer
 
 local function AutoJoinGauntletOnce()
     local gauntletTPs = workspace:FindFirstChild("Gauntletteleporters")
@@ -90,24 +89,6 @@ end)
 
 local function SendGameEndNotification()
     local hasWebhook = _G.DiscordURL and _G.DiscordURL ~= ""
-    if not hasWebhook then
-        if _G.AutoStory then
-            pcall(function()
-                local nextStage, nextDiff = _G.GetNextStoryStage()
-                if nextStage then
-                    _G.StoryCurrentStage = nextStage
-                    _G.StoryCurrentDifficulty = nextDiff
-                    SaveConfig()
-                    print("📖 [Story] เลื่อนด่าน → " .. nextDiff .. " Stage " .. nextStage)
-                else
-                    _G.AutoStory = false
-                    SaveConfig()
-                    print("🏆 [Story] Chapter ครบแล้ว!")
-                end
-            end)
-        end
-    end
-
     task.wait(1.5)
 
     local mapName = GetCurrentMapName() or "Unknown"
@@ -389,11 +370,8 @@ task.spawn(function()
                     end
                     RandomDelay(1, 3)
                     pcall(function()
-                        local joinedVIP = RejoinVIPServer()
-                        if not joinedVIP then
-                            game:GetService("ReplicatedStorage").Events.ExitGame:FireServer()
-                            print("🚪 Auto To Lobby: Fire ExitGame")
-                        end
+                        game:GetService("ReplicatedStorage").Events.ExitGame:FireServer()
+                        print("🚪 Auto To Lobby: Fire ExitGame")
                     end)
                     task.wait(5)
                 end

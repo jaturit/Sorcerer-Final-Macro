@@ -1,4 +1,4 @@
--- [[ 📦 Utilities.lua - Wave Tracker, Fast Vote Skip, Event Card, Rejoin, IsInLobby ]]
+-- [[ 📦 Utilities.lua - Wave Tracker, Fast Vote Skip, Event Card, IsInLobby ]]
 -- Module 5 of 12 | Sorcerer Final Macro - Modular Edition
 
 local Player = _G._Player
@@ -147,39 +147,6 @@ local function ClickEventCard(choice)
 end
 
 -- ═══════════════════════════════════════════════════════
--- 🔁 AUTO REJOIN PRIVATE SERVER
--- ═══════════════════════════════════════════════════════
-
-local function RejoinVIPServer()
-    if not _G.AutoRejoinPS or not _G.PrivateServerLink or _G.PrivateServerLink == "" then return false end
-    local placeIdStr = _G.PrivateServerLink:match("games/(%d+)")
-    local code = _G.PrivateServerLink:match("code=([^&]+)") or _G.PrivateServerLink:match("privateServerLinkCode=([^&]+)")
-    if code then
-        local targetPlaceId = placeIdStr and tonumber(placeIdStr) or game.PlaceId
-        print("🔁 กำลังวาร์ปกลับ Private Server...")
-        pcall(function()
-            game:GetService("TeleportService"):TeleportToPrivateServer(targetPlaceId, code, {game.Players.LocalPlayer})
-        end)
-        return true
-    end
-    return false
-end
-
-game:GetService("Players").LocalPlayer.OnTeleport:Connect(function(state)
-    if state == Enum.TeleportState.Failed then
-        task.wait(2)
-        RejoinVIPServer()
-    end
-end)
-
-pcall(function()
-    game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-        task.wait(2)
-        RejoinVIPServer()
-    end)
-end)
-
--- ═══════════════════════════════════════════════════════
 -- 🏠 IS IN LOBBY
 -- ═══════════════════════════════════════════════════════
 
@@ -199,7 +166,6 @@ end
 
 _G.GetCardModNames = GetCardModNames
 _G.ClickEventCard = ClickEventCard
-_G.RejoinVIPServer = RejoinVIPServer
 _G.IsInLobby = IsInLobby
 
 print("✅ [Module 5/12] Utilities.lua loaded successfully")
