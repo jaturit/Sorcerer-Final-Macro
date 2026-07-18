@@ -5,7 +5,7 @@ local HttpService = _G._Services.HttpService
 local AUTH_FILE = _G._AUTH_FILE
 
 -- Replace this value with the /exec URL from the deployed Google Apps Script Web App.
-local WEB_APP_URL = "PASTE_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE"
+local WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwR-zm1_bdvMwMtR4dqDF8SCu19m3gI-aG333CjP8oc8Pqy2sCKiXaffm9FhGhvukgBmQ/exec"
 local CLIENT_VERSION = "2.1.0"
 
 local ERROR_MESSAGES = {
