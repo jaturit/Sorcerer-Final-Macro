@@ -1,143 +1,168 @@
--- [[ 📦 KeyAuth.lua - Key Validation + User Authentication ]]
--- Module 2 of 12 | Sorcerer Final Macro - Modular Edition
+-- [[ KeyAuth.lua - Google Apps Script License Authentication ]]
+-- ไม่มี GitHub Token ฝั่ง Client
 
 local HttpService = _G._Services.HttpService
-local Request = _G._Request
-local AUTH_FILE = _G._AUTH_FILE
-
--- ═══════════════════════════════════════════════════════
--- 🔑 KEY SYSTEM
--- ═══════════════════════════════════════════════════════
+local Players = game:GetService("Players")
+local Player = _G._Player or Players.LocalPlayer
+local AUTH_FILE = _G._AUTH_FILE or "MacroProAuth.json"
 
 local KeySystem = {
-    DatabaseURL = "https://gist.githubusercontent.com/jaturit/7a97d2e454bc83be6315f33a43b74318/raw/keys.json",
-    GistID = "7a97d2e454bc83be6315f33a43b74318",
-    GitHubToken = "github_pat_" .. "11BXEN26A0" .. "3LSBFv8age4U_W9jVENXiT0" .. "C6BPjGN5nLmFByBcg4HrcNk" .. "GiYXA1tZY0NMXJC3GKLTMvXGyM",
-    KeyDuration = 30 * 24 * 60 * 60,
+    -- ใส่ URL หลัง Deploy Google Apps Script เป็น Web App เช่น:
+    -- https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+    WebAppURL = _G._KEY_API_URL or "https://script.google.com/macros/s/AKfycbwR-zm1_bdvMwMtR4dqDF8SCu19m3gI-aG333CjP8oc8Pqy2sCKiXaffm9FhGhvukgBmQ/exec"
 }
 
-function KeySystem:UploadToGitHub(keysTable)
-    local success = pcall(function()
-        Request({
-            Url = "https://api.github.com/gists/" .. self.GistID,
-            Method = "PATCH",
-            Headers = {
-                ["Authorization"] = "Bearer " .. self.GitHubToken,
-                ["Content-Type"] = "application/json"
-            },
-            Body = HttpService:JSONEncode({
-                files = { ["keys.json"] = { content = HttpService:JSONEncode(keysTable) } }
-            })
-        })
-    end)
-    return success
+local function normalizeKey(key)
+    return tostring(key or ""):upper():gsub("%s+", "")
 end
 
-function KeySystem:LoadKeys()
-    local keys = {}
-    local success, response = pcall(function()
-        return game:HttpGet(self.DatabaseURL .. "?t=" .. tostring(os.time()))
+local function decodeResponse(body)
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(body)
     end)
-    if success then
-        local decodeSuccess, decodedData = pcall(function() return HttpService:JSONDecode(response) end)
-        if decodeSuccess then keys = decodedData end
+    if ok and type(data) == "table" then
+        return data
     end
-    return keys
+    return nil
+end
+
+function KeySystem:IsConfigured()
+    return type(self.WebAppURL) == "string"
+        and self.WebAppURL:match("^https://script%.google%.com/macros/s/") ~= nil
+        and self.WebAppURL:match("/exec/?$") ~= nil
+end
+
+function KeySystem:CallAPI(action, data)
+    if not self:IsConfigured() then
+        return {
+            ok = false,
+            code = "API_NOT_CONFIGURED",
+            msg = "ยังไม่ได้ใส่ Google Apps Script Web App URL ใน KeyAuth.lua"
+        }
+    end
+
+    data = data or {}
+    data.action = action
+
+    local queryParts = {}
+    for name, value in pairs(data) do
+        table.insert(queryParts,
+            HttpService:UrlEncode(tostring(name)) .. "=" ..
+            HttpService:UrlEncode(tostring(value))
+        )
+    end
+    table.insert(queryParts, "t=" .. tostring(os.time()))
+
+    local separator = self.WebAppURL:find("?", 1, true) and "&" or "?"
+    local requestUrl = self.WebAppURL .. separator .. table.concat(queryParts, "&")
+
+    -- ใช้ GET/game:HttpGet เพื่อรองรับ Executor ที่ตอบ HTTP 405 เมื่อส่ง POST
+    local success, responseBody = pcall(function()
+        return game:HttpGet(requestUrl, true)
+    end)
+
+    if not success then
+        return {
+            ok = false,
+            code = "NETWORK_ERROR",
+            msg = "เชื่อมต่อระบบคีย์ไม่สำเร็จ: " .. tostring(responseBody)
+        }
+    end
+
+    local result = decodeResponse(tostring(responseBody or ""))
+    if not result then
+        return {
+            ok = false,
+            code = "INVALID_RESPONSE",
+            msg = "ระบบคีย์ส่งข้อมูลกลับมาไม่ถูกต้อง"
+        }
+    end
+
+    return result
 end
 
 function KeySystem:ValidateKey(key)
-    local keys = self:LoadKeys()
-    local keyData = keys[key]
-    if not keyData then return false, "Key not found / คีย์ไม่ถูกต้อง", 0 end
-
-    -- ดึง HWID ของเครื่องนี้
-    local hwid = ""
-    pcall(function() hwid = game:GetService("RbxAnalyticsService"):GetClientId() end)
-
-    -- [[ ⏳ Unused Key: เจนล่วงหน้า → Activate ตอนใช้ครั้งแรก ]]
-    if keyData.Unused == true then
-        local d = keyData.Duration or 30
-        keys[key].Unused = nil
-        keys[key].Active = true
-        keys[key].ExpiresAt = os.time() + (d * 86400)
-        keys[key].ActivatedAt = os.time()
-        keys[key].hwid = hwid  -- ล็อค HWID ตอน activate
-        keyData = keys[key]
-        task.spawn(function()
-            self:UploadToGitHub(keys)
-        end)
-        print("🔓 Key activated! Duration: " .. d .. " days | HWID locked")
+    key = normalizeKey(key)
+    if key == "" then
+        return false, "กรุณาใส่คีย์", 0, nil
     end
 
-    -- [[ 🔒 HWID Check ]]
-    if keyData.hwid and keyData.hwid ~= "" then
-        if hwid ~= keyData.hwid then
-            return false, "HWID ไม่ตรง! คีย์นี้ผูกกับเครื่องอื่น", 0
-        end
-    elseif keyData.Active then
-        -- key เก่าที่ยังไม่มี hwid → ล็อคเครื่องนี้
-        keys[key].hwid = hwid
-        task.spawn(function()
-            self:UploadToGitHub(keys)
-        end)
-        print("🔒 HWID locked for existing key")
+    local result = self:CallAPI("validate", {
+        key = key,
+        deviceId = tostring(Player.UserId),
+        deviceName = Player.Name
+    })
+
+    if result.ok == true then
+        return true, result.msg or "Valid", tonumber(result.remainingDays or 0) or 0, result
     end
 
-    if not keyData.Active then return false, "Key is deactivated / คีย์ถูกระงับ", 0 end
-    local now = os.time()
-    if now > keyData.ExpiresAt then return false, "Key has expired / คีย์หมดอายุแล้ว", 0 end
-    local remainingSeconds = keyData.ExpiresAt - now
-    local remainingDays = math.ceil(remainingSeconds / (24 * 60 * 60))
-    return true, "Valid", remainingDays, keyData
+    return false, result.msg or "ตรวจสอบคีย์ไม่สำเร็จ", 0, result
 end
-
--- ═══════════════════════════════════════════════════════
--- 💾 USER AUTH SYSTEM
--- ═══════════════════════════════════════════════════════
 
 local UserAuth = {
     CurrentKey = nil,
     RemainingDays = 0,
-    KeyData = nil
+    KeyData = nil,
+    LastError = nil
 }
 
 function UserAuth:Save()
-    pcall(function()
+    if not self.CurrentKey then return false end
+
+    local success = pcall(function()
         writefile(AUTH_FILE, HttpService:JSONEncode({
             Key = self.CurrentKey,
             LastCheck = os.time()
         }))
     end)
+    return success
 end
 
 function UserAuth:Load()
-    pcall(function()
+    local success = pcall(function()
         if isfile(AUTH_FILE) then
             local data = HttpService:JSONDecode(readfile(AUTH_FILE))
-            self.CurrentKey = data.Key
+            local savedKey = normalizeKey(data.Key)
+            if savedKey ~= "" then
+                self.CurrentKey = savedKey
+            end
         end
     end)
+    return success and self.CurrentKey ~= nil
 end
 
 function UserAuth:Validate()
     if not self.CurrentKey then
-        return false, "No key saved", 0
+        self.LastError = "No key saved"
+        return false, self.LastError, 0
     end
+
+    -- ตรวจสิทธิ์กับ Server ทุกครั้งที่รันสคริปต์
     local valid, message, days, keyData = KeySystem:ValidateKey(self.CurrentKey)
     self.RemainingDays = days
     self.KeyData = keyData
+    self.LastError = valid and nil or message
+
+    if valid then
+        self:Save()
+    end
     return valid, message, days
 end
 
 function UserAuth:Login(key)
+    key = normalizeKey(key)
     local valid, message, days, keyData = KeySystem:ValidateKey(key)
     if valid then
         self.CurrentKey = key
         self.RemainingDays = days
         self.KeyData = keyData
+        self.LastError = nil
         self:Save()
         return true, days
     end
+
+    self.LastError = message
     return false, message
 end
 
@@ -145,16 +170,15 @@ function UserAuth:Logout()
     self.CurrentKey = nil
     self.RemainingDays = 0
     self.KeyData = nil
+    self.LastError = nil
     pcall(function()
-        if isfile(AUTH_FILE) then delfile(AUTH_FILE) end
+        if isfile(AUTH_FILE) then
+            delfile(AUTH_FILE)
+        end
     end)
 end
-
--- ═══════════════════════════════════════════════════════
--- 📤 EXPORT
--- ═══════════════════════════════════════════════════════
 
 _G._KeySystem = KeySystem
 _G._UserAuth = UserAuth
 
-print("✅ [Module 2/12] KeyAuth.lua loaded successfully")
+print("✅ [KeyAuth] License authentication loaded")
