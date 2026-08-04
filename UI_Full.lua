@@ -1572,6 +1572,8 @@ local function LoadMainUI()
 
     createToggle(MainBox, "🔒 Friends Only", _G.StoryFriendsOnly, function(v) _G.StoryFriendsOnly = v; SaveConfig() end)
 
+    createToggle(MainBox, "🎯 Auto QTE", _G.AutoQTE, function(v) _G.AutoQTE = v; SaveConfig() end)
+
     -- Auto Sell All at Wave
     _G.AutoSellWave = _G.AutoSellWave or 0
     _G.AutoSellEnabled = _G.AutoSellEnabled or false
@@ -2924,6 +2926,11 @@ local function LoadMainUI()
                 end
             end
         end
+    end)
+
+    createToggle(RecBox, "⚔️ Auto Domain (Justice)", _G.AutoDomain, function(v)
+        _G.AutoDomain = v
+        SaveConfig()
     end)
 
     local FileBox = createContainer(Page2, 220)
@@ -4831,6 +4838,174 @@ local function LoadMainUI()
     storyToggleCircle.ZIndex = 6
     Instance.new("UICorner", storyToggleCircle).CornerRadius = UDim.new(1, 0)
     local storyCyberVisual = makeCyberToggleVisual(storyToggleBtn, storyToggleCircle, storyToggleStroke)
+
+    -- ══════════════════════════════════════════════════════
+    -- 🎯 AUTO QTE BACKGROUND LOGIC
+    -- ══════════════════════════════════════════════════════
+    do
+        local clickRemote = nil
+        pcall(function()
+            clickRemote = Player:WaitForChild("QTE", 5) and Player.QTE:WaitForChild("Click", 5)
+        end)
+
+        local LEAD_TIME = 0.055
+        local previousMarkerX = nil
+        local smoothedVelocity = 0
+        local lastFrameTime = os.clock()
+        local lastClickTime = 0
+        local clickedZone = nil
+        local clickedZoneX = nil
+        local clickedZoneWidth = nil
+        local waitingForNewZone = false
+
+        local function getActiveZone(bar)
+            local selected = nil
+            local bestScore = math.huge
+            for _, object in ipairs(bar:GetChildren()) do
+                if object.Name == "Zone" and object:IsA("GuiObject") and object.Visible then
+                    local transparency
+                    if object:IsA("ImageLabel") then
+                        transparency = object.ImageTransparency
+                    else
+                        transparency = object.BackgroundTransparency
+                    end
+                    if transparency < 0.95 and object.AbsoluteSize.X > 0 and object.AbsoluteSize.Y > 0 then
+                        local score = math.abs(object.AbsoluteSize.Y - bar.AbsoluteSize.Y)
+                        if score < bestScore then
+                            bestScore = score
+                            selected = object
+                        end
+                    end
+                end
+            end
+            return selected
+        end
+
+        local function resetQTERound()
+            previousMarkerX = nil
+            smoothedVelocity = 0
+            lastFrameTime = os.clock()
+            lastClickTime = 0
+            clickedZone = nil
+            clickedZoneX = nil
+            clickedZoneWidth = nil
+            waitingForNewZone = false
+        end
+
+        task.spawn(function()
+            local RunService = game:GetService("RunService")
+            while ScreenGui and ScreenGui.Parent do
+                if _G.AutoQTE and clickRemote then
+                    local gui = PlayerGui:FindFirstChild("QTE")
+                    local frame = gui and gui:FindFirstChild("Frame")
+                    local bar = frame and frame:FindFirstChild("Bar")
+                    local marker = bar and bar:FindFirstChild("Marker")
+
+                    local active = gui
+                        and (not gui:IsA("ScreenGui") or gui.Enabled)
+                        and frame and frame.Visible
+                        and bar and marker and marker.Visible
+
+                    if active then
+                        local zone = getActiveZone(bar)
+                        if zone then
+                            local now = os.clock()
+                            local deltaTime = math.max(now - lastFrameTime, 1 / 240)
+                            local markerX = marker.AbsolutePosition.X + marker.AbsoluteSize.X / 2
+
+                            if previousMarkerX then
+                                local instantVelocity = (markerX - previousMarkerX) / deltaTime
+                                smoothedVelocity = smoothedVelocity * 0.35 + instantVelocity * 0.65
+                            end
+
+                            previousMarkerX = markerX
+                            lastFrameTime = now
+
+                            local zoneX = zone.AbsolutePosition.X
+                            local zoneWidth = zone.AbsoluteSize.X
+
+                            local zoneChanged = clickedZone == nil
+                                or zone ~= clickedZone
+                                or clickedZoneX == nil
+                                or math.abs(zoneX - clickedZoneX) >= 2
+                                or clickedZoneWidth == nil
+                                or math.abs(zoneWidth - clickedZoneWidth) >= 2
+
+                            if waitingForNewZone and zoneChanged then
+                                waitingForNewZone = false
+                            end
+
+                            local predictedMarkerX = markerX + smoothedVelocity * LEAD_TIME
+                            local margin = math.clamp(zoneWidth * 0.12, 1, 7)
+                            local safeLeft = zoneX + margin
+                            local safeRight = zoneX + zoneWidth - margin
+
+                            local predictedHit = predictedMarkerX >= safeLeft and predictedMarkerX <= safeRight
+                            local markerMoving = math.abs(smoothedVelocity) >= 10
+
+                            if predictedHit and markerMoving and not waitingForNewZone and now - lastClickTime >= 0.06 then
+                                pcall(function()
+                                    clickRemote:FireServer(workspace:GetServerTimeNow())
+                                end)
+                                lastClickTime = now
+                                clickedZone = zone
+                                clickedZoneX = zoneX
+                                clickedZoneWidth = zoneWidth
+                                waitingForNewZone = true
+                            end
+                        end
+                    else
+                        resetQTERound()
+                    end
+                else
+                    resetQTERound()
+                end
+                RunService.RenderStepped:Wait()
+            end
+        end)
+    end
+
+    -- ══════════════════════════════════════════════════════
+    -- ⚔️ AUTO DOMAIN BACKGROUND LOGIC
+    -- ══════════════════════════════════════════════════════
+    do
+        local domainRemote = nil
+        pcall(function()
+            domainRemote = ReplicatedStorage
+                :WaitForChild("Remotes", 5)
+                :WaitForChild("Towers", 5)
+                :WaitForChild("JusticeSorcerer", 5)
+                :WaitForChild("Domain", 5)
+        end)
+
+        local function getJusticeTowers()
+            local found = {}
+            local towers = workspace:FindFirstChild("Towers")
+            if not towers then return found end
+            for _, tower in ipairs(towers:GetChildren()) do
+                if string.find(tower.Name, "JusticeSorcerer", 1, true) == 1 then
+                    table.insert(found, tower)
+                end
+            end
+            return found
+        end
+
+        task.spawn(function()
+            while ScreenGui and ScreenGui.Parent do
+                if _G.AutoDomain and domainRemote then
+                    local towers = getJusticeTowers()
+                    for _, tower in ipairs(towers) do
+                        if not _G.AutoDomain then break end
+                        pcall(function()
+                            domainRemote:FireServer(tower)
+                        end)
+                        task.wait(0.05)
+                    end
+                end
+                task.wait(1)
+            end
+        end)
+    end
 
     local function updateStoryToggle(val)
         if val then

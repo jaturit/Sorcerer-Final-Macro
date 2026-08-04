@@ -86,6 +86,10 @@ _G.UIBackgroundImage = "rbxassetid://90298702993965"
 _G.UIBackgroundTransparency = 0.52
 _G.LagSaverBackgroundImage = LAGSAVER_BACKGROUND_IMAGE
 
+-- Justice Sorcerer
+_G.AutoQTE = false
+_G.AutoDomain = false
+
 -- Auto Story
 _G.AutoStory = false
 _G.StoryGameEnded = false
@@ -854,7 +858,9 @@ local function SaveConfig()
             LowPerformanceFPS = _G.LowPerformanceFPS,
             CyberpunkUI = _G.CyberpunkUI,
             UIBackgroundImage = _G.UIBackgroundImage,
-            UIBackgroundTransparency = _G.UIBackgroundTransparency
+            UIBackgroundTransparency = _G.UIBackgroundTransparency,
+            AutoQTE = _G.AutoQTE,
+            AutoDomain = _G.AutoDomain
         }
         writefile(CONFIG_FILE, HttpService:JSONEncode(cfg))
     end)
@@ -905,6 +911,8 @@ local function LoadConfig()
             if _G.CyberpunkUI == nil then _G.CyberpunkUI = true end
             _G.UIBackgroundImage = "rbxassetid://90298702993965"
             _G.UIBackgroundTransparency = ClampNumber(data.UIBackgroundTransparency or 0.52, 0.35, 1)
+            _G.AutoQTE = data.AutoQTE or false
+            _G.AutoDomain = data.AutoDomain or false
             if data.GoodFarmQueue then
                 _G.GoodFarmQueue = data.GoodFarmQueue
                 -- เช็ค mode ที่ขาดแล้วเติมให้อัตโนมัติ (กรณี config เก่าไม่มี mode ใหม่)
