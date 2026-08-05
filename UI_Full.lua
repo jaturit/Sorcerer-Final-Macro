@@ -4848,115 +4848,53 @@ local function LoadMainUI()
             clickRemote = Player:WaitForChild("QTE", 5) and Player.QTE:WaitForChild("Click", 5)
         end)
 
-        -- ตรวจทุก RenderStepped เหมือนเดิม จึงไม่เสียเวลาใน QTE 10 วินาที
-        -- 0.055 คือค่าชดเชยที่ทดสอบแล้วกดได้ตรงที่สุดในเวอร์ชันก่อนหน้า
         local LEAD_TIME = 0.055
-        -- กัน Remote เด้งซ้ำจากเฟรมติดกันเท่านั้น ไม่ใช่การหน่วงรอก่อนตรวจรอบใหม่
-        local MIN_FIRE_GAP = 0.12
-
-        -- Runtime กลาง: เมื่อ UI ถูกโหลดซ้ำ ลูปเก่าจะหยุดทันที และทุกลูปใช้ debounce เดียวกัน
-        local runtimeEnv = (getgenv and getgenv()) or _G
-        local qteRuntime = runtimeEnv.__SORCERER_QTE_RUNTIME
-        if type(qteRuntime) ~= "table" then
-            qteRuntime = {}
-            runtimeEnv.__SORCERER_QTE_RUNTIME = qteRuntime
-        end
-        qteRuntime.Generation = (tonumber(qteRuntime.Generation) or 0) + 1
-        qteRuntime.LastFireAt = tonumber(qteRuntime.LastFireAt) or 0
-        local myGeneration = qteRuntime.Generation
-
         local previousMarkerX = nil
         local smoothedVelocity = 0
-        local velocitySamples = 0
         local lastFrameTime = os.clock()
-        local inactiveFrames = 0
-        local frameNumber = 0
+        local lastClickTime = 0
+        local clickedZone = nil
+        local clickedZoneX = nil
+        local clickedZoneWidth = nil
+        local waitingForNewZone = false
 
-        -- จำเป็นราย Zone แทนการดูตำแหน่งที่ขยับ 2px เพราะ Zone มี Tween ตลอดเวลา
-        local zoneStates = setmetatable({}, { __mode = "k" })
-
-        local function getTransparency(object)
-            if object:IsA("ImageLabel") or object:IsA("ImageButton") then
-                return object.ImageTransparency
-            end
-            return object.BackgroundTransparency
-        end
-
-        local function getVisibleZones(bar, now)
-            local zones = {}
+        local function getActiveZone(bar)
+            local selected = nil
+            local bestScore = math.huge
             for _, object in ipairs(bar:GetChildren()) do
                 if object.Name == "Zone" and object:IsA("GuiObject") and object.Visible then
-                    local transparency = getTransparency(object)
-                    local zoneWidth = object.AbsoluteSize.X
-                    local zoneHeight = object.AbsoluteSize.Y
-                    if transparency < 0.95 and zoneWidth > 0 and zoneHeight > 0 then
-                        local zoneX = object.AbsolutePosition.X
-                        local zoneCenter = zoneX + zoneWidth / 2
-                        local state = zoneStates[object]
-
-                        if not state then
-                            state = {
-                                Clicked = false,
-                                ClickedAt = 0,
-                                LastVisibleFrame = frameNumber,
-                                LastCenter = zoneCenter,
-                                LastWidth = zoneWidth,
-                            }
-                            zoneStates[object] = state
-                        else
-                            -- ถ้า Zone เดิมเคยหายไปแล้วกลับมา แปลว่าเกมนำ Instance เดิมมาใช้ในรอบใหม่
-                            if state.LastVisibleFrame and state.LastVisibleFrame < frameNumber - 1 then
-                                state.Clicked = false
-                            end
-
-                            -- รองรับเกมย้าย Zone เดิมแบบทันที แต่ไม่ปลดล็อกจาก Tween เล็ก ๆ
-                            local relocationDistance = math.max(24, math.min(state.LastWidth or zoneWidth, zoneWidth) * 0.70)
-                            if state.LastCenter
-                                and math.abs(zoneCenter - state.LastCenter) >= relocationDistance
-                                and now - (state.ClickedAt or 0) >= MIN_FIRE_GAP then
-                                state.Clicked = false
-                            end
-
-                            state.LastVisibleFrame = frameNumber
-                            state.LastCenter = zoneCenter
-                            state.LastWidth = zoneWidth
+                    local transparency
+                    if object:IsA("ImageLabel") then
+                        transparency = object.ImageTransparency
+                    else
+                        transparency = object.BackgroundTransparency
+                    end
+                    if transparency < 0.95 and object.AbsoluteSize.X > 0 and object.AbsoluteSize.Y > 0 then
+                        local score = math.abs(object.AbsoluteSize.Y - bar.AbsoluteSize.Y)
+                        if score < bestScore then
+                            bestScore = score
+                            selected = object
                         end
-
-                        table.insert(zones, {
-                            Object = object,
-                            State = state,
-                            X = zoneX,
-                            Width = zoneWidth,
-                            Transparency = transparency,
-                        })
                     end
                 end
             end
-            return zones
+            return selected
         end
 
-        local function resetMotion(clearZones)
+        local function resetQTERound()
             previousMarkerX = nil
             smoothedVelocity = 0
-            velocitySamples = 0
             lastFrameTime = os.clock()
-            if clearZones then
-                zoneStates = setmetatable({}, { __mode = "k" })
-            end
-        end
-
-        local function rearmZonesAfterMarkerReset()
-            -- Marker กระโดดกลับต้นแถบ = เริ่ม sweep ใหม่ จึงอนุญาตให้ Instance เดิมใช้ซ้ำได้
-            for _, state in pairs(zoneStates) do
-                state.Clicked = false
-            end
+            lastClickTime = 0
+            clickedZone = nil
+            clickedZoneX = nil
+            clickedZoneWidth = nil
+            waitingForNewZone = false
         end
 
         task.spawn(function()
             local RunService = game:GetService("RunService")
-            while ScreenGui and ScreenGui.Parent and qteRuntime.Generation == myGeneration do
-                frameNumber = frameNumber + 1
-
+            while ScreenGui and ScreenGui.Parent do
                 if _G.AutoQTE and clickRemote then
                     local gui = PlayerGui:FindFirstChild("QTE")
                     local frame = gui and gui:FindFirstChild("Frame")
@@ -4969,95 +4907,59 @@ local function LoadMainUI()
                         and bar and marker and marker.Visible
 
                     if active then
-                        if inactiveFrames > 0 then
-                            -- เก็บ debounce กลางไว้ แต่ล้างค่าความเร็วเก่าเมื่อหน้าต่าง QTE กลับมา
-                            resetMotion(inactiveFrames >= 2)
-                            inactiveFrames = 0
-                        end
+                        local zone = getActiveZone(bar)
+                        if zone then
+                            local now = os.clock()
+                            local deltaTime = math.max(now - lastFrameTime, 1 / 240)
+                            local markerX = marker.AbsolutePosition.X + marker.AbsoluteSize.X / 2
 
-                        local now = os.clock()
-                        local deltaTime = math.max(now - lastFrameTime, 1 / 240)
-                        local markerX = marker.AbsolutePosition.X + marker.AbsoluteSize.X / 2
-                        local markerJumped = false
-
-                        if previousMarkerX then
-                            local markerDelta = markerX - previousMarkerX
-                            local resetDistance = math.max(45, bar.AbsoluteSize.X * 0.22)
-
-                            if math.abs(markerDelta) >= resetDistance then
-                                -- อย่าเอาความเร็วจากปลายแถบไปปนกับต้นแถบรอบใหม่
-                                markerJumped = true
-                                smoothedVelocity = 0
-                                velocitySamples = 0
-                                rearmZonesAfterMarkerReset()
-                            else
-                                local instantVelocity = markerDelta / deltaTime
-                                if velocitySamples == 0 then
-                                    smoothedVelocity = instantVelocity
-                                else
-                                    smoothedVelocity = smoothedVelocity * 0.35 + instantVelocity * 0.65
-                                end
-                                velocitySamples = velocitySamples + 1
+                            if previousMarkerX then
+                                local instantVelocity = (markerX - previousMarkerX) / deltaTime
+                                smoothedVelocity = smoothedVelocity * 0.35 + instantVelocity * 0.65
                             end
-                        end
 
-                        previousMarkerX = markerX
-                        lastFrameTime = now
+                            previousMarkerX = markerX
+                            lastFrameTime = now
 
-                        if not markerJumped and velocitySamples > 0 and math.abs(smoothedVelocity) >= 10 then
+                            local zoneX = zone.AbsolutePosition.X
+                            local zoneWidth = zone.AbsoluteSize.X
+
+                            local zoneChanged = clickedZone == nil
+                                or zone ~= clickedZone
+                                or clickedZoneX == nil
+                                or math.abs(zoneX - clickedZoneX) >= 2
+                                or clickedZoneWidth == nil
+                                or math.abs(zoneWidth - clickedZoneWidth) >= 2
+
+                            if waitingForNewZone and zoneChanged then
+                                waitingForNewZone = false
+                            end
+
                             local predictedMarkerX = markerX + smoothedVelocity * LEAD_TIME
-                            local zones = getVisibleZones(bar, now)
-                            local selected = nil
-                            local bestScore = math.huge
+                            local margin = math.clamp(zoneWidth * 0.12, 1, 7)
+                            local safeLeft = zoneX + margin
+                            local safeRight = zoneX + zoneWidth - margin
 
-                            for _, candidate in ipairs(zones) do
-                                if not candidate.State.Clicked then
-                                    -- เล็งเข้าเนื้อสีเขียว ไม่ยิงตรงขอบ และยังเผื่อการข้ามพิกเซลระหว่างเฟรม
-                                    local margin = math.clamp(candidate.Width * 0.20, 2, 16)
-                                    local safeLeft = candidate.X + margin
-                                    local safeRight = candidate.X + candidate.Width - margin
+                            local predictedHit = predictedMarkerX >= safeLeft and predictedMarkerX <= safeRight
+                            local markerMoving = math.abs(smoothedVelocity) >= 10
 
-                                    if predictedMarkerX >= safeLeft and predictedMarkerX <= safeRight then
-                                        local center = candidate.X + candidate.Width / 2
-                                        -- ถ้ามี Zone เก่ากำลังจางซ้อนกับ Zone ใหม่ ให้เลือกอันที่ทึบกว่าก่อน
-                                        local score = candidate.Transparency * 10000
-                                            + math.abs(predictedMarkerX - center)
-                                        if score < bestScore then
-                                            bestScore = score
-                                            selected = candidate
-                                        end
-                                    end
-                                end
-                            end
-
-                            if selected and now - qteRuntime.LastFireAt >= MIN_FIRE_GAP then
-                                -- ล็อกก่อน FireServer เพื่อให้ลูปอื่นยิงแทรกในเฟรมเดียวกันไม่ได้
-                                qteRuntime.LastFireAt = now
-                                selected.State.Clicked = true
-                                selected.State.ClickedAt = now
-
-                                local fired = pcall(function()
+                            if predictedHit and markerMoving and not waitingForNewZone and now - lastClickTime >= 0.06 then
+                                pcall(function()
                                     clickRemote:FireServer(workspace:GetServerTimeNow())
                                 end)
-
-                                if not fired then
-                                    -- ถ้า Remote error จริง ให้ลอง Zone นี้ใหม่ได้หลัง debounce สั้น ๆ
-                                    selected.State.Clicked = false
-                                end
+                                lastClickTime = now
+                                clickedZone = zone
+                                clickedZoneX = zoneX
+                                clickedZoneWidth = zoneWidth
+                                waitingForNewZone = true
                             end
-                        else
-                            -- ยังต้องอัปเดตการมองเห็น เพื่อรู้ว่า Zone เดิมหายแล้วกลับมาเมื่อใด
-                            getVisibleZones(bar, now)
                         end
                     else
-                        inactiveFrames = inactiveFrames + 1
-                        resetMotion(inactiveFrames >= 2)
+                        resetQTERound()
                     end
                 else
-                    inactiveFrames = inactiveFrames + 1
-                    resetMotion(true)
+                    resetQTERound()
                 end
-
                 RunService.RenderStepped:Wait()
             end
         end)
