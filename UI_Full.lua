@@ -4840,7 +4840,7 @@ local function LoadMainUI()
     local storyCyberVisual = makeCyberToggleVisual(storyToggleBtn, storyToggleCircle, storyToggleStroke)
 
     -- ══════════════════════════════════════════════════════
-    -- 🎯 AUTO QTE BACKGROUND LOGIC
+    -- 🎯 AUTO QTE: CENTER TARGET (v2)
     -- ══════════════════════════════════════════════════════
     do
         local clickRemote = nil
@@ -4849,6 +4849,8 @@ local function LoadMainUI()
         end)
 
         local LEAD_TIME = 0.055
+        local CENTER_MARGIN = 0.30  -- ตัดขอบซ้ายและขวาข้างละ 30%
+        local CLICK_COOLDOWN = 0.06
         local previousMarkerX = nil
         local smoothedVelocity = 0
         local lastFrameTime = os.clock()
@@ -4936,14 +4938,15 @@ local function LoadMainUI()
                             end
 
                             local predictedMarkerX = markerX + smoothedVelocity * LEAD_TIME
-                            local margin = math.clamp(zoneWidth * 0.12, 1, 7)
+                            -- Center Target: กดเฉพาะช่วงกลาง 40% ของ Zone
+                            local margin = zoneWidth * CENTER_MARGIN
                             local safeLeft = zoneX + margin
                             local safeRight = zoneX + zoneWidth - margin
 
                             local predictedHit = predictedMarkerX >= safeLeft and predictedMarkerX <= safeRight
                             local markerMoving = math.abs(smoothedVelocity) >= 10
 
-                            if predictedHit and markerMoving and not waitingForNewZone and now - lastClickTime >= 0.06 then
+                            if predictedHit and markerMoving and not waitingForNewZone and now - lastClickTime >= CLICK_COOLDOWN then
                                 pcall(function()
                                     clickRemote:FireServer(workspace:GetServerTimeNow())
                                 end)
